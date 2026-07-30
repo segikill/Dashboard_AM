@@ -1,17 +1,6 @@
 (() => {
   "use strict";
 
-  const scriptUrl = new URL(document.currentScript.src, window.location.href);
-  const siteRoot = new URL("../", scriptUrl);
-  const path = decodeURIComponent(window.location.pathname).replace(/\\/g, "/");
-
-  const page = {
-    match: "/index.html",
-    region: "Амурская область",
-    label: "Интерактивный атлас смертности",
-    period: "2023–2025",
-    kind: "Интерактивный отчёт"
-  };
   const main = document.querySelector("main");
   if (main && !main.id) main.id = "main-content";
 
@@ -20,28 +9,6 @@
   skip.href = main ? `#${main.id}` : "#top";
   skip.textContent = "Перейти к содержанию";
   document.body.prepend(skip);
-
-  if (page) {
-    const shell = document.createElement("header");
-    shell.className = "site-shell";
-    shell.setAttribute("aria-label", "Навигация по аналитическим отчётам");
-
-    const rootHref = new URL("index.html", siteRoot).href;
-    shell.innerHTML = `
-      <div class="site-shell__inner">
-        <nav class="site-shell__breadcrumbs" aria-label="Хлебные крошки">
-          <a href="${rootHref}">Амурская область</a>
-          <span class="site-shell__separator" aria-hidden="true">›</span>
-          <span class="site-shell__current" aria-current="page">${page.label}</span>
-        </nav>
-        <div class="site-shell__meta" aria-label="Параметры отчёта">
-          <span class="site-shell__pill">${page.kind}</span>
-          <span class="site-shell__pill">${page.period}</span>
-        </div>
-      </div>`;
-    document.body.insertBefore(shell, skip.nextSibling);
-    document.body.classList.add("site-has-shell");
-  }
 
   document.querySelectorAll(".table-wrap").forEach((wrap, index) => {
     wrap.tabIndex = 0;
@@ -209,7 +176,7 @@
     setDrawerOpen(true);
 
     const enumValues = {
-      view: ["treemap", "heatmap", "arrow", "pyramid", "plot", "map", "dotogram"],
+      view: ["treemap", "heatmap", "arrow", "pyramid", "plot", "map", "dotogram", "infrastructure"],
       sex: ["all", "1", "2"],
       age: ["all", "0_14", "15_44", "45_64", "65_79", "80P"],
       treeType: ["root", "class", "block"],
@@ -1680,9 +1647,74 @@
       }
     };
 
+    const mortalityMapModel = (context) => {
+      const { defs, map } = geoValues(state.mapUnit, state.mapClass);
+      const totalRows = filtered().length;
+      const features = defs.map((definition, index) => {
+        const value = map.get(index);
+        const metricValue = value
+          ? territoryMetric(state.mapMetric, value, definition, state.mapClass, totalRows)
+          : null;
+        const population = populationValue(definition);
+        return {
+          id: Number(definition.id),
+          index,
+          kind: state.mapUnit,
+          name: definition.name,
+          municipality: definition.municipality || "",
+          isCity: Boolean(definition.isCity),
+          metricValue,
+          metricFormatted: Number.isFinite(metricValue)
+            ? formatTerritoryMetric(state.mapMetric, metricValue)
+            : "н/д",
+          calculation: value && rateBase(state.mapMetric)
+            ? rateFormula(value.selected, definition, state.mapMetric)
+            : "",
+          populationFormatted: population ? fmt(population) : "н/д",
+          totalFormatted: fmt(value?.total || 0),
+          selectedFormatted: fmt(value?.selected || 0),
+          shareFormatted: pct(value?.total ? value.selected / value.total * 100 : 0),
+          structure: value ? topClasses(value) : "нет наблюдений",
+          active: Boolean(value),
+          suppressed: Boolean(value && suppressSmallValues && value.selected < 5)
+        };
+      });
+      const featuresById = new Map(features.map((feature) => [feature.id, feature]));
+      const ranks = features
+        .filter((feature) => Number.isFinite(feature.metricValue))
+        .sort((left, right) => right.metricValue - left.metricValue)
+        .slice(0, 15);
+      const rateNoteHtml = rateBase(state.mapMetric)
+        ? `<div class="site-map-legend-note">Среднегодовой расчёт: смерти / население ${DATA.populationYear} / ${rateYearsLabel()}. Серый цвет — нет положительного знаменателя.${state.sex !== "all" || state.age !== "all" ? "<br><strong>Знаменатель — общая численность населения.</strong>" : ""}</div>`
+        : "";
+      return {
+        unit: state.mapUnit,
+        labels: state.mapLabels,
+        metric: state.mapMetric,
+        metricLabel: territoryMetricLabel(state.mapMetric),
+        populationYear: DATA.populationYear,
+        colors: paletteClassColors(),
+        boundaries: context.boundaries,
+        maximum: context.scaleMaximum,
+        maximumFormatted: formatTerritoryMetric(state.mapMetric, context.scaleMaximum),
+        unitLabel: state.mapMetric === "share" ? "%" : rateBase(state.mapMetric) ? "" : "смертей",
+        manualScale: context.manualScale,
+        suppressSmallValues,
+        rateNoteHtml,
+        populationLegendHtml: state.mapUnit === "settlement" ? populationLegendHtml() : "",
+        settlementLabelLegendHtml: state.mapUnit === "settlement" ? settlementLabelLegendHtml() : "",
+        municipalityLabelLegendHtml: state.mapUnit === "mo" ? municipalityLabelLegendHtml() : "",
+        features,
+        featuresById,
+        ranks
+      };
+    };
+
     const renderOptimizedMapView = () => {
       mapPerformance.filterMiss = false;
       mapPerformance.aggregateMiss = false;
+      document.body.classList.remove("infrastructure-view");
+      window.AmurInfrastructureMap?.destroy?.();
       localControls();
       renderKpis();
       els.title.textContent = VIEWS.map[0];
@@ -1692,7 +1724,20 @@
         : "Муниципальные полигоны окрашены по выбранному показателю и пяти классам Дженкса. Поверх районов сохраняются опорные точки и подписи ключевых городов размером 15 px; переключатель подписей позволяет их скрыть. Колесо масштабирует карту, перетаскивание изменяет охват.";
       els.meta.innerHTML = `<span class="chip">${state.year === "all" ? (DATA.years.length > 1 ? `${DATA.years[0]}–${DATA.years[DATA.years.length - 1]}` : DATA.years[0]) : state.year}</span><span class="chip">${state.sex === "all" ? "оба пола" : state.sex === "1" ? "мужчины" : "женщины"}</span><span class="chip">${document.querySelector(`#ageSelect option[value="${state.age}"]`)?.textContent || "все возрасты"}</span><span class="chip">EPSG:3857 · Web Mercator</span>`;
       const context = syncActiveMapBreaks();
-      updateOptimizedMap(context);
+      if (!window.AmurMortalityMap) {
+        updateOptimizedMap(context);
+        return;
+      }
+      const model = mortalityMapModel(context);
+      let host = els.viz.querySelector(":scope > .mortality-map-host");
+      if (!host) {
+        els.viz.innerHTML = '<div class="mortality-map-host"></div>';
+        host = els.viz.querySelector(".mortality-map-host");
+        window.AmurMortalityMap.mount(host, model);
+      } else {
+        window.AmurMortalityMap.update(model);
+        window.AmurMortalityMap.resize();
+      }
     };
 
     const highlightSearchTarget = () => {
@@ -1706,8 +1751,16 @@
       } else if (searchTarget.type === "block") {
         target = [...document.querySelectorAll(".tile")].find((tile) => tile.querySelector(".tile-code")?.textContent.trim() === DATA.blocks[searchTarget.index].code);
       } else if (searchTarget.type === "municipality" && state.view === "map") {
+        if (window.AmurMortalityMap) {
+          window.AmurMortalityMap.select("mo", DATA.municipalities[searchTarget.index].id, { fly: true, popup: false });
+          return;
+        }
         target = document.querySelector(`#viz [data-map-kind="mo"][data-index="${searchTarget.index}"]`);
       } else if (searchTarget.type === "settlement" && state.view === "map") {
+        if (window.AmurMortalityMap) {
+          window.AmurMortalityMap.select("settlement", DATA.settlements[searchTarget.index].id, { fly: true, popup: false });
+          return;
+        }
         target = document.querySelector(`#viz [data-map-kind="settlement"][data-index="${searchTarget.index}"]`);
       }
       if (target) {
@@ -2059,10 +2112,16 @@
         && DATA.records.length < 10000
         && typeof document.startViewTransition === "function";
       const updateDom = () => {
+        if (state.view !== "map") window.AmurMortalityMap?.destroy?.();
         els.viz.dataset.view = state.view;
         if (state.view === "map") renderOptimizedMapView();
         else baseRender();
+        if (atlasDrawer) atlasDrawer.dataset.view = state.view;
         if (drawerTitle) drawerTitle.textContent = VIEWS[state.view]?.[0] || "Параметры";
+        if (changedView) {
+          const drawerScroll = atlasDrawer?.querySelector(".drawer-scroll");
+          if (drawerScroll) drawerScroll.scrollTop = 0;
+        }
         syncGlobalControls();
         writeUrlState();
         addSupplementalControls();

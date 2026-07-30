@@ -1,0 +1,231 @@
+#viz[data-view="map"] {
+  min-height: var(--atlas-viz-height, 650px);
+  overflow: hidden;
+  background: #eef3f7;
+}
+
+.mortality-map-host {
+  height: 100%;
+  min-height: 0;
+}
+
+.mortality-map-shell {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  background: #eef3f7;
+  isolation: isolate;
+}
+
+.mortality-map-column {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: 48px minmax(0, 1fr);
+}
+
+.mortality-map-toolbar {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px 7px 14px;
+  border-bottom: 1px solid #d6e0e8;
+  background: rgba(250, 252, 253, .96);
+  box-shadow: 0 4px 16px rgba(31, 56, 78, .06);
+}
+
+.mortality-map-toolbar > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.mortality-map-toolbar span {
+  color: #718497;
+  font-size: 8.5px;
+  font-weight: 900;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.mortality-map-toolbar b {
+  overflow: hidden;
+  color: #17304b;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mortality-map-toolbar button {
+  padding: 7px 11px;
+  border: 1px solid #c8d7e4;
+  border-radius: 9px;
+  background: #fff;
+  color: #245274;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.mortality-map-toolbar button:hover {
+  border-color: #7fa3c2;
+  background: #f5f9fc;
+}
+
+.mortality-map,
+.mortality-map.maplibregl-map {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: #eef2f5;
+}
+
+.mortality-map-side {
+  min-width: 0;
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #b8c7d5 transparent;
+  scrollbar-width: thin;
+}
+
+.mortality-map-side .rank-list {
+  padding-bottom: 10px;
+}
+
+.mortality-map-side .rank-item {
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mortality-map-side .rank-item:hover {
+  border-color: #9cb4cc;
+  background: #f5f9fc;
+  transform: translateX(2px);
+}
+
+.mortality-map-status {
+  position: absolute;
+  z-index: 6;
+  top: 58px;
+  left: 50%;
+  max-width: min(560px, calc(100% - 30px));
+  padding: 8px 12px;
+  border: 1px solid #cbd9e4;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 8px 24px rgba(31, 56, 78, .14);
+  color: #466078;
+  font-size: 10px;
+  font-weight: 800;
+  transform: translateX(-50%);
+}
+
+.mortality-map-status.is-warning {
+  border-color: #e7c878;
+  background: rgba(255, 250, 231, .96);
+  color: #775811;
+}
+
+.mortality-map-status.is-error {
+  border-color: #e1a7a7;
+  background: rgba(255, 242, 242, .96);
+  color: #8c3232;
+}
+
+.mortality-map .maplibregl-ctrl-top-right {
+  top: 7px;
+  right: 7px;
+}
+
+.mortality-map .maplibregl-ctrl-group {
+  overflow: hidden;
+  border: 1px solid #cbd8e3;
+  border-radius: 10px;
+  box-shadow: 0 5px 16px rgba(31, 56, 78, .13);
+}
+
+.mortality-map .maplibregl-popup-content {
+  max-height: min(430px, 62vh);
+  overflow: auto;
+  padding: 11px 12px;
+  border: 1px solid #d4e0e9;
+  border-radius: 12px;
+  box-shadow: 0 12px 34px rgba(27, 49, 68, .18);
+}
+
+.mortality-map .maplibregl-popup-close-button {
+  right: 3px;
+  padding: 2px 7px;
+  color: #63778b;
+  font-size: 18px;
+}
+
+.mortality-map .mortality-hover-popup {
+  pointer-events: none;
+}
+
+.mortality-popup {
+  min-width: 245px;
+  color: #263c52;
+  font-size: 10px;
+}
+
+.mortality-popup > b {
+  display: block;
+  max-width: 290px;
+  margin: 0 18px 7px 0;
+  color: #17304b;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.mortality-popup .tip-grid,
+.mortality-map-side .tip-grid {
+  display: grid;
+  grid-template-columns: minmax(105px, 1fr) minmax(95px, auto);
+  gap: 4px 10px;
+}
+
+.mortality-popup .tip-grid span,
+.mortality-map-side .tip-grid span {
+  color: #708195;
+}
+
+.mortality-popup .tip-grid strong,
+.mortality-map-side .tip-grid strong {
+  color: #263c52;
+  font-weight: 800;
+  text-align: right;
+}
+
+@media (min-width: 1900px) {
+  .mortality-map-shell {
+    grid-template-columns: minmax(0, 1fr) 330px;
+  }
+
+  .mortality-map-toolbar {
+    min-height: 52px;
+  }
+
+  .mortality-map-toolbar b {
+    font-size: 14px;
+  }
+
+  .mortality-map-side {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 1250px) {
+  .mortality-map-shell {
+    grid-template-columns: minmax(0, 1fr) 272px;
+  }
+}

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Пиктограммы медицинской инфраструктуры</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #eef3f8; color: #10233f; }
+    main { width: min(1120px, calc(100% - 48px)); margin: 32px auto; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    p { margin: 0 0 24px; color: #64748b; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+    .card { display: grid; grid-template-columns: 76px 1fr; align-items: center; min-height: 108px; padding: 16px; border: 1px solid #d7e0eb; border-radius: 18px; background: #fff; box-shadow: 0 10px 24px rgba(29,53,87,.07); }
+    .card img { width: 64px; height: 64px; }
+    .card strong { display: block; font-size: 17px; line-height: 1.15; }
+    .card small { display: block; margin-top: 7px; color: #7b8ba1; }
+    .sizes { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+    .sizes img:nth-child(1) { width: 26px; height: 26px; }
+    .sizes img:nth-child(2) { width: 20px; height: 20px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Медицинская инфраструктура</h1>
+    <p>Плоские SVG-пиктограммы: крупный вид и контроль читаемости при 26/20 px.</p>
+    <section class="grid">
+      <article class="card"><img src="hospital.svg" alt=""><div><strong>Больницы</strong><small>Корпус</small><div class="sizes"><img src="hospital.svg" alt=""><img src="hospital.svg" alt=""></div></div></article>
+      <article class="card"><img src="polyclinic.svg" alt=""><div><strong>Поликлиники</strong><small>Медицинская карта</small><div class="sizes"><img src="polyclinic.svg" alt=""><img src="polyclinic.svg" alt=""></div></div></article>
+      <article class="card"><img src="fap.svg" alt=""><div><strong>ФАП</strong><small>Сельский медпункт</small><div class="sizes"><img src="fap.svg" alt=""><img src="fap.svg" alt=""></div></div></article>
+      <article class="card"><img src="ambulatory.svg" alt=""><div><strong>Амбулатории</strong><small>Сумка и стетоскоп</small><div class="sizes"><img src="ambulatory.svg" alt=""><img src="ambulatory.svg" alt=""></div></div></article>
+      <article class="card"><img src="maternity.svg" alt=""><div><strong>Родильные дома</strong><small>Мать и ребёнок</small><div class="sizes"><img src="maternity.svg" alt=""><img src="maternity.svg" alt=""></div></div></article>
+      <article class="card"><img src="consultation.svg" alt=""><div><strong>Консультации</strong><small>Диалог</small><div class="sizes"><img src="consultation.svg" alt=""><img src="consultation.svg" alt=""></div></div></article>
+      <article class="card"><img src="rehabilitation.svg" alt=""><div><strong>Реабилитация</strong><small>Движение с опорой</small><div class="sizes"><img src="rehabilitation.svg" alt=""><img src="rehabilitation.svg" alt=""></div></div></article>
+      <article class="card"><img src="health-post.svg" alt=""><div><strong>Здравпункты</strong><small>Защитный щит</small><div class="sizes"><img src="health-post.svg" alt=""><img src="health-post.svg" alt=""></div></div></article>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,9 +1,4 @@
 :root {
-  --site-shell-bg: #10213f;
-  --site-shell-panel: #183b77;
-  --site-shell-text: #f7f9ff;
-  --site-shell-muted: #c8d5ec;
-  --site-shell-accent: #8fb2ff;
   --site-focus: #ffca3a;
   --site-link: #2859c2;
 }
@@ -25,83 +20,6 @@
 
 .site-skip-link:focus {
   transform: translateY(0);
-}
-
-.site-shell {
-  position: relative;
-  z-index: 200;
-  width: 100%;
-  border-bottom: 1px solid rgba(255, 255, 255, .12);
-  background-color: var(--site-shell-bg);
-  background-image: linear-gradient(105deg, var(--site-shell-bg), var(--site-shell-panel));
-  color: var(--site-shell-text);
-  font-family: Inter, "Segoe UI", Arial, sans-serif;
-}
-
-.site-shell__inner {
-  display: flex;
-  width: min(1480px, calc(100% - 40px));
-  min-height: 54px;
-  margin: 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 22px;
-}
-
-.site-shell__breadcrumbs {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  color: var(--site-shell-muted);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.site-shell__breadcrumbs a {
-  color: var(--site-shell-text);
-  font-weight: 750;
-  text-decoration: none;
-}
-
-.site-shell__breadcrumbs a:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.site-shell__separator {
-  color: var(--site-shell-accent);
-}
-
-.site-shell__current {
-  overflow: hidden;
-  max-width: 580px;
-  color: var(--site-shell-muted);
-  text-overflow: ellipsis;
-}
-
-.site-shell__meta {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 7px;
-}
-
-.site-shell__pill {
-  padding: 5px 9px;
-  border: 1px solid rgba(255, 255, 255, .18);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .08);
-  color: var(--site-shell-text);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: .01em;
-}
-
-body.site-has-shell > .site-home-link,
-body.site-has-shell > .topbar,
-body.site-has-shell > main > .back {
-  display: none !important;
 }
 
 a.back,
@@ -809,7 +727,7 @@ svg .site-atlas-highlight {
 }
 
 /* Desktop 16:9 workspace for the interactive mortality atlases. */
-body.site-has-shell:has(.atlas-main) {
+body.site-observatory:has(.atlas-main) {
   overflow-x: hidden;
   background: #edf2f8;
 }
@@ -1008,7 +926,9 @@ body.site-has-shell:has(.atlas-main) {
 
 .viz-rail .viz-nav {
   display: grid;
-  grid-template-rows: repeat(7, minmax(52px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(8, clamp(52px, 7.4vh, 82px));
+  align-content: start;
   flex: 1 1 auto;
   gap: 5px;
   margin: 0;
@@ -1031,6 +951,37 @@ body.site-has-shell:has(.atlas-main) {
   text-align: center;
 }
 
+.viz-rail .viz-btn::before {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  color: rgba(221, 235, 252, .58);
+  content: attr(data-order);
+  font-size: 7px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.viz-rail .viz-btn--map-primary {
+  border-color: rgba(104, 207, 220, .2);
+  background: linear-gradient(145deg, rgba(73, 169, 194, .12), rgba(255, 255, 255, .025));
+}
+
+.viz-rail .viz-btn--map-primary[data-view="infrastructure"] {
+  border-color: rgba(108, 208, 169, .2);
+  background: linear-gradient(145deg, rgba(57, 164, 133, .13), rgba(255, 255, 255, .025));
+}
+
+.viz-rail .viz-btn--analysis-start::after {
+  position: absolute;
+  top: -4px;
+  right: 7px;
+  left: 7px;
+  height: 1px;
+  background: rgba(218, 232, 249, .22);
+  content: "";
+}
+
 .viz-rail .viz-btn:hover {
   border-color: rgba(255, 255, 255, .2);
   background: rgba(255, 255, 255, .08);
@@ -1041,6 +992,10 @@ body.site-has-shell:has(.atlas-main) {
   background: #2d68d8;
   color: #fff;
   box-shadow: 0 5px 14px rgba(0, 30, 85, .28);
+}
+
+.viz-rail .viz-btn--map-primary.active::before {
+  color: rgba(255, 255, 255, .82);
 }
 
 .viz-rail .viz-btn .icon,
@@ -1125,6 +1080,11 @@ body.site-has-shell:has(.atlas-main) {
   background: #f8fafd;
 }
 
+.drawer-head > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .drawer-head span {
   display: block;
   margin-bottom: 1px;
@@ -1136,18 +1096,20 @@ body.site-has-shell:has(.atlas-main) {
 }
 
 .drawer-head h2 {
-  overflow: hidden;
-  max-width: 185px;
+  overflow: visible;
+  max-width: none;
   margin: 0;
   color: #172b4d;
   font-size: 14px;
   line-height: 1.16;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .drawer-head-actions {
   display: flex;
+  flex: 0 0 auto;
   gap: 4px;
 }
 
@@ -1485,22 +1447,23 @@ body.site-has-shell:has(.atlas-main) {
   }
 }
 
-/* Compact header for laptop-class screens: keep the atlas, not the masthead, in focus. */
+@media (max-width: 1099px) and (min-width: 900px) {
+  .atlas-main {
+    --atlas-viz-height: clamp(390px, calc(100vh - 305px), 820px);
+    padding-bottom: 0;
+  }
+
+  .viz-rail .viz-nav {
+    grid-template-rows: repeat(8, clamp(48px, 6.7vh, 70px));
+  }
+
+  .viz-rail .viz-btn {
+    min-height: 48px;
+  }
+}
+
+/* Compact atlas layout for laptop-class screens. */
 @media (max-height: 920px) and (min-width: 1100px) {
-  .site-shell__inner {
-    min-height: 40px;
-  }
-
-  .site-shell__breadcrumbs {
-    gap: 6px;
-    font-size: 11px;
-  }
-
-  .site-shell__pill {
-    padding: 3px 7px;
-    font-size: 9px;
-  }
-
   .atlas-main {
     --atlas-viz-height: clamp(500px, calc(100vh - 219px), 700px);
     padding-top: 5px;
@@ -1611,10 +1574,14 @@ body.site-has-shell:has(.atlas-main) {
   }
 }
 
-@media (max-width: 1099px) {
+@media (max-width: 899px) {
   .atlas-main .workspace,
   .atlas-main .workspace.drawer-collapsed {
     grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .viz-rail .viz-btn .rail-label {
+    font-size: 7.5px;
   }
 
   .atlas-main .sidebar {
@@ -1659,7 +1626,7 @@ body.site-observatory[data-region="amur"] {
   --atlas-highlight: #d5a52b;
 }
 
-body.site-has-shell.site-observatory:has(.atlas-main) {
+body.site-observatory:has(.atlas-main) {
   background-color: #edf2f7;
   background-image:
     linear-gradient(rgba(74, 104, 144, .035) 1px, transparent 1px),
@@ -1667,13 +1634,6 @@ body.site-has-shell.site-observatory:has(.atlas-main) {
     radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--atlas-accent) 11%, transparent), transparent 31%),
     radial-gradient(circle at 92% 86%, color-mix(in srgb, var(--atlas-highlight) 8%, transparent), transparent 28%);
   background-size: 32px 32px, 32px 32px, auto, auto;
-}
-
-body.site-observatory .site-shell {
-  background-image:
-    radial-gradient(circle at 82% -80%, color-mix(in srgb, var(--atlas-accent) 62%, transparent), transparent 48%),
-    linear-gradient(108deg, #0d1d36, #142e52 58%, #123555);
-  box-shadow: 0 8px 28px rgba(11, 30, 57, .16);
 }
 
 body.site-observatory .atlas-main .hero {
@@ -2074,7 +2034,6 @@ html[data-motion-mode="off"] *::after {
 }
 
 @media print {
-  .site-shell,
   .site-skip-link {
     display: none !important;
   }

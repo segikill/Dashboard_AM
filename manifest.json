@@ -1,6 +1,6 @@
 {
   "report": "index.html",
-  "html_bytes": 1256363,
+  "html_bytes": 1259322,
   "standalone": true,
   "region": "Амурская область",
   "cross_region_dependencies": false,
@@ -12,8 +12,26 @@
     "pyramid",
     "plot",
     "map",
-    "dotogram"
+    "dotogram",
+    "infrastructure"
   ],
+  "infrastructure": {
+    "engine": "MapLibre GL JS 5.24.0",
+    "display_crs": "EPSG:3857",
+    "exchange_crs": "EPSG:4326",
+    "facilities": 417,
+    "facility_types": 8,
+    "facility_icons": "individual flat SVG",
+    "cluster_visualization": "segmented donut: count, composition and dominant type",
+    "cluster_hover_details": true,
+    "cluster_click_action": "expand",
+    "isochrones_minutes": [20, 60],
+    "isochrone_origin": "hospitals",
+    "municipalities": 29,
+    "settlements": 632,
+    "population_year": 2021,
+    "basemap": "OpenFreeMap Positron"
+  },
   "class_year_rows": 57,
   "municipality_class_rows": 957,
   "quality": {
