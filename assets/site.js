@@ -1,0 +1,2129 @@
+(() => {
+  "use strict";
+
+  const scriptUrl = new URL(document.currentScript.src, window.location.href);
+  const siteRoot = new URL("../", scriptUrl);
+  const path = decodeURIComponent(window.location.pathname).replace(/\\/g, "/");
+
+  const page = {
+    match: "/index.html",
+    region: "Амурская область",
+    label: "Интерактивный атлас смертности",
+    period: "2023–2025",
+    kind: "Интерактивный отчёт"
+  };
+  const main = document.querySelector("main");
+  if (main && !main.id) main.id = "main-content";
+
+  const skip = document.createElement("a");
+  skip.className = "site-skip-link";
+  skip.href = main ? `#${main.id}` : "#top";
+  skip.textContent = "Перейти к содержанию";
+  document.body.prepend(skip);
+
+  if (page) {
+    const shell = document.createElement("header");
+    shell.className = "site-shell";
+    shell.setAttribute("aria-label", "Навигация по аналитическим отчётам");
+
+    const rootHref = new URL("index.html", siteRoot).href;
+    shell.innerHTML = `
+      <div class="site-shell__inner">
+        <nav class="site-shell__breadcrumbs" aria-label="Хлебные крошки">
+          <a href="${rootHref}">Амурская область</a>
+          <span class="site-shell__separator" aria-hidden="true">›</span>
+          <span class="site-shell__current" aria-current="page">${page.label}</span>
+        </nav>
+        <div class="site-shell__meta" aria-label="Параметры отчёта">
+          <span class="site-shell__pill">${page.kind}</span>
+          <span class="site-shell__pill">${page.period}</span>
+        </div>
+      </div>`;
+    document.body.insertBefore(shell, skip.nextSibling);
+    document.body.classList.add("site-has-shell");
+  }
+
+  document.querySelectorAll(".table-wrap").forEach((wrap, index) => {
+    wrap.tabIndex = 0;
+    wrap.setAttribute("role", "region");
+    if (!wrap.hasAttribute("aria-label")) {
+      const sectionTitle = wrap.closest("section")?.querySelector("h2, h3")?.textContent?.trim();
+      wrap.setAttribute("aria-label", sectionTitle ? `Таблица: ${sectionTitle}` : `Прокручиваемая таблица ${index + 1}`);
+    }
+  });
+
+  const selectWheelTimes = new Map();
+  document.addEventListener("wheel", (event) => {
+    const select = event.target instanceof Element ? event.target.closest("select") : null;
+    if (!select || select.disabled || select.multiple || select.size > 1 || event.deltaY === 0) return;
+    event.preventDefault();
+    const key = select.id || select.name || "anonymous-select";
+    const now = performance.now();
+    const previous = selectWheelTimes.get(key);
+    if (previous !== undefined && now - previous < 350) return;
+    selectWheelTimes.set(key, now);
+    const direction = event.deltaY > 0 ? 1 : -1;
+    let nextIndex = select.selectedIndex + direction;
+    while (nextIndex >= 0 && nextIndex < select.options.length && select.options[nextIndex].disabled) {
+      nextIndex += direction;
+    }
+    if (nextIndex < 0 || nextIndex >= select.options.length) return;
+    select.focus({ preventScroll: true });
+    select.selectedIndex = nextIndex;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  }, { passive: false });
+
+  const improveTreemapContrast = () => {
+    document.querySelectorAll(".tile").forEach((tile) => {
+      tile.style.setProperty("color", "#ffffff", "important");
+      tile.querySelectorAll(".tile-code, .tile-label, .tile-value").forEach((part) => {
+        part.style.setProperty("color", "#ffffff", "important");
+      });
+    });
+  };
+
+  improveTreemapContrast();
+  const chartRoot = document.getElementById("viz");
+  if (chartRoot) {
+    new MutationObserver(improveTreemapContrast).observe(chartRoot, { childList: true, subtree: true });
+  }
+
+  const enhanceAtlas = () => {
+    if (!document.getElementById("viz")) return;
+    if (typeof state === "undefined" || typeof render !== "function" || typeof DATA === "undefined") return;
+
+    const exportPrefix = DATA.regionKey || "amur";
+    document.body.dataset.region = exportPrefix;
+    document.body.classList.add("site-observatory");
+    const motionQuery = new URLSearchParams(window.location.search).get("motion");
+    let storedMotion = "";
+    try {
+      storedMotion = window.localStorage.getItem("atlas-motion-mode") || "";
+    } catch {
+      storedMotion = "";
+    }
+    const systemReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    let motionMode = ["full", "reduced", "off"].includes(motionQuery)
+      ? motionQuery
+      : ["full", "reduced", "off"].includes(storedMotion)
+        ? storedMotion
+        : systemReducedMotion ? "reduced" : "full";
+    const motionDuration = () => motionMode === "full" ? 260 : motionMode === "reduced" ? 120 : 0;
+    const applyMotionMode = (mode, persist = true) => {
+      motionMode = ["full", "reduced", "off"].includes(mode) ? mode : "full";
+      document.documentElement.dataset.motionMode = motionMode;
+      if (persist) {
+        try {
+          window.localStorage.setItem("atlas-motion-mode", motionMode);
+        } catch {
+          /* localStorage can be unavailable for hardened local-file sessions */
+        }
+      }
+      const url = new URL(window.location.href);
+      if (motionMode === "full") url.searchParams.delete("motion");
+      else url.searchParams.set("motion", motionMode);
+      history.replaceState(null, "", url);
+      document.querySelectorAll(".atlas-motion-control [data-motion-mode]").forEach((button) => {
+        const active = button.dataset.motionMode === motionMode;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+    };
+    applyMotionMode(motionMode, false);
+    if (state.treeColor === undefined || state.treeColor === "change") state.treeColor = "count";
+    if (state.mapLabels === undefined || state.mapLabels === "key") state.mapLabels = "auto";
+    if (state.mapPalette === undefined) state.mapPalette = "teal";
+    if (state.mapColorLow === undefined) state.mapColorLow = "#e5f2f4";
+    if (state.mapColorHigh === undefined) state.mapColorHigh = "#115b70";
+    if (state.mapBreaks === undefined) state.mapBreaks = "";
+    if (state.dotLabels === undefined) state.dotLabels = "outliers";
+
+    const defaults = { ...state };
+    const atlasWorkspace = document.getElementById("atlasWorkspace");
+    const atlasDrawer = document.getElementById("atlasDrawer");
+    const drawerTitle = document.getElementById("drawerTitle");
+    const drawerToggle = document.getElementById("drawerToggle");
+    const drawerRailToggle = document.getElementById("drawerRailToggle");
+    const atlasHelpToggle = document.getElementById("atlasHelpToggle");
+    const methodPanel = document.querySelector(".atlas-main .method");
+    let drawerOpen = true;
+    let drawerResizeTimer = 0;
+
+    const setDrawerOpen = (open) => {
+      drawerOpen = Boolean(open);
+      atlasWorkspace?.classList.toggle("drawer-collapsed", !drawerOpen);
+      atlasDrawer?.setAttribute("aria-hidden", String(!drawerOpen));
+      if (atlasDrawer) atlasDrawer.inert = !drawerOpen;
+      [drawerToggle, drawerRailToggle].forEach((button) => {
+        if (!button) return;
+        button.setAttribute("aria-expanded", String(drawerOpen));
+      });
+      if (drawerToggle) {
+        drawerToggle.textContent = "«";
+        drawerToggle.title = "Свернуть панель";
+        drawerToggle.setAttribute("aria-label", "Свернуть панель");
+      }
+      if (drawerRailToggle) {
+        const glyph = drawerRailToggle.querySelector("span");
+        if (glyph) glyph.textContent = drawerOpen ? "«" : "»";
+        drawerRailToggle.title = drawerOpen ? "Свернуть панель параметров" : "Открыть панель параметров";
+      }
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      window.clearTimeout(drawerResizeTimer);
+      drawerResizeTimer = window.setTimeout(() => {
+        window.dispatchEvent(new Event("resize"));
+      }, 260);
+    };
+
+    const closeMethodPanel = () => {
+      methodPanel?.classList.remove("is-open");
+      atlasHelpToggle?.setAttribute("aria-expanded", "false");
+    };
+
+    const toggleMethodPanel = () => {
+      if (!methodPanel) return;
+      const open = !methodPanel.classList.contains("is-open");
+      methodPanel.classList.toggle("is-open", open);
+      atlasHelpToggle?.setAttribute("aria-expanded", String(open));
+    };
+
+    if (methodPanel && !methodPanel.querySelector(".method-close")) {
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "method-close";
+      close.textContent = "×";
+      close.title = "Закрыть методику";
+      close.setAttribute("aria-label", "Закрыть методику");
+      close.addEventListener("click", closeMethodPanel);
+      methodPanel.prepend(close);
+    }
+    drawerToggle?.addEventListener("click", () => setDrawerOpen(false));
+    drawerRailToggle?.addEventListener("click", () => setDrawerOpen(!drawerOpen));
+    atlasHelpToggle?.setAttribute("aria-expanded", "false");
+    atlasHelpToggle?.addEventListener("click", toggleMethodPanel);
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeMethodPanel();
+    });
+    setDrawerOpen(true);
+
+    const enumValues = {
+      view: ["treemap", "heatmap", "arrow", "pyramid", "plot", "map", "dotogram"],
+      sex: ["all", "1", "2"],
+      age: ["all", "0_14", "15_44", "45_64", "65_79", "80P"],
+      treeType: ["root", "class", "block"],
+      treeMetric: ["n", "share", "pgpzh"],
+      treeColor: ["count", "change", "age"],
+      heatUnit: ["mo", "settlement"],
+      heatMetric: ["share", "n", "per1k", "per10k", "per100k"],
+      heatLimit: ["25", "50", "all"],
+      arrowMode: ["time", "sex", "region"],
+      pyramidMetric: ["n", "share"],
+      plotLevel: ["class", "code"],
+      mapUnit: ["settlement", "mo"],
+      mapMetric: ["n", "share", "per1k", "per10k", "per100k"],
+      mapLabels: ["auto", "centers", "off"],
+      mapPalette: ["teal", "blue", "purple", "orange", "green", "rose", "custom"],
+      dotUnit: ["settlement", "mo"],
+      dotMetric: ["n", "share", "median", "pgpzh", "per1k", "per10k", "per100k"],
+      dotLabels: ["outliers", "top", "off"]
+    };
+    const classKeys = new Set(["pyramidClass", "plotClass", "mapClass", "dotClass"]);
+    const urlKeys = Object.keys(defaults);
+    let restoringHistory = false;
+    let searchTarget = null;
+    let suppressSmallValues = false;
+    let mapViewport = [0, 0, 760, 790];
+    const debugMap = new URLSearchParams(window.location.search).get("debug") === "1";
+    const filteredCache = new Map();
+    const geoAggregateCache = new Map();
+    const mapScaleCache = new Map();
+    const mapPerformance = { filterMiss: false, aggregateMiss: false, filterMs: 0, aggregateMs: 0 };
+    const originalFiltered = filtered;
+    const cachePut = (cache, key, value, maximum = 16) => {
+      if (cache.has(key)) cache.delete(key);
+      cache.set(key, value);
+      while (cache.size > maximum) cache.delete(cache.keys().next().value);
+      return value;
+    };
+    const filterStateKey = () => `${state.year}|${state.sex}|${state.age}`;
+    const filterOptionsKey = (options = {}) => {
+      const years = Array.isArray(options.years) ? options.years.join(",") : "";
+      return `${filterStateKey()}|years:${years}|ignoreYear:${options.ignoreYear ? 1 : 0}|ignoreSex:${options.ignoreSex ? 1 : 0}`;
+    };
+    filtered = (options = {}) => {
+      const key = filterOptionsKey(options);
+      if (filteredCache.has(key)) return filteredCache.get(key);
+      const started = performance.now();
+      const result = originalFiltered(options);
+      mapPerformance.filterMiss = true;
+      mapPerformance.filterMs = performance.now() - started;
+      return cachePut(filteredCache, key, result, 48);
+    };
+    const optimizedTreeItems = () => {
+      const rows = filtered();
+      const definitions = state.treeType === "root"
+        ? DATA.classes.map((definition, index) => ({
+            i: index,
+            code: definition.roman,
+            label: definition.short,
+            color: definition.color,
+            next: "class"
+          }))
+        : state.treeType === "class"
+          ? DATA.blocks
+              .map((definition, index) => ({ definition, index }))
+              .filter(({ definition }) => definition.class === state.treeIndex)
+              .map(({ definition, index }) => ({
+                i: index,
+                code: definition.code,
+                label: definition.label,
+                color: DATA.classes[definition.class].color,
+                next: "block"
+              }))
+          : DATA.codes
+              .map((definition, index) => ({ definition, index }))
+              .filter(({ definition }) => definition.block === state.treeIndex)
+              .map(({ definition, index }) => ({
+                i: index,
+                code: definition.code,
+                label: definition.label,
+                color: DATA.classes[definition.class].color,
+                next: "code"
+              }));
+      const itemIndex = (row) => state.treeType === "root"
+        ? classOf(row)
+        : state.treeType === "class" ? blockOf(row) : row[3];
+      const current = new Map(definitions.map((definition) => [definition.i, { ...definition, rows: [] }]));
+      rows.forEach((row) => {
+        const entry = current.get(itemIndex(row));
+        if (entry) entry.rows.push(row);
+      });
+      const minimumYear = Math.min(...DATA.years);
+      const periodYears = state.year === "all"
+        ? DATA.years.length <= 3
+          ? [[DATA.years[0]], [DATA.years[DATA.years.length - 1]]]
+          : [DATA.years.slice(0, Math.floor(DATA.years.length / 2)), DATA.years.slice(Math.floor(DATA.years.length / 2))]
+        : [[Math.max(minimumYear, +state.year - 1)], [+state.year]];
+      const periodAggregates = periodYears.map((years) => {
+        const aggregate = new Map(definitions.map((definition) => [definition.i, { n: 0, pgpzh: 0 }]));
+        filtered({ years, ignoreYear: true }).forEach((row) => {
+          const entry = aggregate.get(itemIndex(row));
+          if (!entry) return;
+          entry.n += 1;
+          if (row[2] >= 0) entry.pgpzh += Math.max(75 - row[2], 0);
+        });
+        return { aggregate, years: years.length };
+      });
+      const total = rows.length;
+      return [...current.values()]
+        .filter((entry) => entry.rows.length)
+        .map((entry) => {
+          const summary = stats(entry.rows);
+          const values = periodAggregates.map(({ aggregate, years }) => {
+            const value = aggregate.get(entry.i) || { n: 0, pgpzh: 0 };
+            return (state.treeMetric === "pgpzh" ? value.pgpzh : value.n) / years;
+          });
+          const change = values[0] > 0 ? (values[1] - values[0]) / values[0] * 100 : null;
+          const value = state.treeMetric === "pgpzh"
+            ? summary.pgpzh
+            : state.treeMetric === "share" ? summary.n / Math.max(total, 1) * 100 : summary.n;
+          return { ...entry, ...summary, value, change };
+        })
+        .sort((left, right) => right.value - left.value);
+    };
+    treeItems = optimizedTreeItems;
+    geoValues = (unit, classKey) => {
+      const key = `${filterStateKey()}|${unit}`;
+      let aggregate = geoAggregateCache.get(key);
+      if (!aggregate) {
+        const started = performance.now();
+        const definitions = unit === "mo" ? DATA.municipalities : DATA.settlements;
+        const position = unit === "mo" ? 4 : 5;
+        const table = new Map();
+        filtered().forEach((row) => {
+          const index = row[position];
+          if (index < 0) return;
+          if (!table.has(index)) {
+            table.set(index, {
+              idx: index,
+              total: 0,
+              selected: 0,
+              ages: [],
+              pgpzh: 0,
+              classes: new Array(DATA.classes.length).fill(0)
+            });
+          }
+          const value = table.get(index);
+          const classIndex = classOf(row);
+          value.total += 1;
+          if (row[2] >= 0) {
+            value.ages.push(row[2]);
+            value.pgpzh += Math.max(75 - row[2], 0);
+          }
+          if (classIndex >= 0) value.classes[classIndex] += 1;
+        });
+        aggregate = cachePut(geoAggregateCache, key, { defs: definitions, table }, 24);
+        mapPerformance.aggregateMiss = true;
+        mapPerformance.aggregateMs = performance.now() - started;
+      }
+      const map = new Map();
+      aggregate.table.forEach((value, index) => {
+        map.set(index, {
+          ...value,
+          selected: classKey === "all" ? value.total : value.classes[+classKey] || 0
+        });
+      });
+      return { defs: aggregate.defs, map };
+    };
+
+    const isValid = (key, value) => {
+      if (enumValues[key]) return enumValues[key].includes(value);
+      if (key === "year") return value === "all" || DATA.years.map(String).includes(value);
+      if (classKeys.has(key)) return value === "all" || (Number.isInteger(+value) && +value >= 0 && +value < DATA.classes.length);
+      if (key === "treeIndex") return Number.isInteger(+value) && +value >= -1 && +value < Math.max(DATA.classes.length, DATA.blocks.length);
+      if (key === "mapScaleMax") return value === "" || (Number.isFinite(+value) && +value >= 0 && +value <= 1e9);
+      if (key === "mapBreaks") {
+        if (value === "") return true;
+        const breaks = value.split(",").map(Number);
+        return breaks.length === 4
+          && breaks.every((item) => Number.isFinite(item) && item > 0 && item <= 1e9)
+          && breaks.every((item, index) => index === 0 || item > breaks[index - 1]);
+      }
+      if (key === "mapColorLow" || key === "mapColorHigh") return /^#[0-9a-f]{6}$/i.test(value);
+      return false;
+    };
+
+    const readUrlState = () => {
+      const params = new URLSearchParams(window.location.search);
+      urlKeys.forEach((key) => {
+        const value = params.get(key);
+        if (value !== null && isValid(key, value)) state[key] = value;
+      });
+    };
+
+    const writeUrlState = () => {
+      if (restoringHistory) return;
+      const url = new URL(window.location.href);
+      urlKeys.forEach((key) => {
+        const value = String(state[key]);
+        if (value === String(defaults[key])) url.searchParams.delete(key);
+        else url.searchParams.set(key, value);
+      });
+      history.replaceState(null, "", url);
+    };
+
+    const syncGlobalControls = () => {
+      const year = document.getElementById("yearSelect");
+      const age = document.getElementById("ageSelect");
+      if (year) year.value = state.year;
+      if (age) age.value = state.age;
+      document.querySelectorAll("#sexSeg button").forEach((button) => button.classList.toggle("active", button.dataset.value === state.sex));
+      document.querySelectorAll(".viz-btn").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
+    };
+
+    const paletteDefinitions = {
+      teal: { label: "Сине-бирюзовая", colors: ["#e5f2f4", "#79b4bf", "#115b70"] },
+      blue: { label: "Синяя", colors: ["#eff6ff", "#78aee8", "#174a8b"] },
+      purple: { label: "Фиолетовая", colors: ["#f5f1fb", "#b69bd6", "#5b2a86"] },
+      orange: { label: "Оранжевая", colors: ["#fff4e6", "#f2a65a", "#a94712"] },
+      green: { label: "Зелёная", colors: ["#edf8ef", "#7fc392", "#176b3a"] },
+      rose: { label: "Розово-бордовая", colors: ["#fff0f3", "#df8ca1", "#8f2444"] },
+      custom: { label: "Своя палитра", colors: [] }
+    };
+
+    const paletteColors = () => state.mapPalette === "custom"
+      ? [state.mapColorLow, state.mapColorHigh]
+      : paletteDefinitions[state.mapPalette]?.colors || paletteDefinitions.teal.colors;
+
+    const rgbFromHex = (hex) => {
+      const value = String(hex).replace("#", "");
+      return [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16));
+    };
+
+    const continuousPaletteColor = (value) => {
+      const colors = paletteColors();
+      const bounded = Math.max(0, Math.min(1, Number(value) || 0));
+      const position = bounded * (colors.length - 1);
+      const index = Math.min(Math.floor(position), colors.length - 2);
+      const fraction = position - index;
+      const start = rgbFromHex(colors[index]);
+      const end = rgbFromHex(colors[index + 1]);
+      const mixed = start.map((channel, channelIndex) => Math.round(channel + (end[channelIndex] - channel) * fraction));
+      return `rgb(${mixed.join(",")})`;
+    };
+
+    const paletteClassColors = () => Array.from(
+      { length: 5 },
+      (_, index) => continuousPaletteColor(index / 4)
+    );
+
+    let activeMapBreakFractions = [0, .2, .4, .6, .8, 1];
+
+    const mapBreakInputValue = (value) => {
+      const rounded = Math.round(Number(value) * 100) / 100;
+      return Number.isFinite(rounded) ? String(rounded) : "";
+    };
+
+    const equalIntervalBreaks = (scaleMaximum) => {
+      const raw = Array.from({ length: 4 }, (_, index) => scaleMaximum * (index + 1) / 5);
+      const precision = state.mapMetric === "n" && scaleMaximum >= 5 ? 0 : scaleMaximum >= 100 ? 1 : 2;
+      const rounded = raw.map((value) => Number(value.toFixed(precision)));
+      return rounded.every((value, index) => value > (index === 0 ? 0 : rounded[index - 1]) && value < scaleMaximum)
+        ? rounded
+        : raw;
+    };
+
+    const jenksBreaks = (source, classCount) => {
+      const data = source.filter(Number.isFinite).sort((left, right) => left - right);
+      const length = data.length;
+      if (!length || classCount < 2) return [data[0] || 0, data[length - 1] || 0];
+      const lower = Array.from({ length: length + 1 }, () => new Float64Array(classCount + 1));
+      const variance = Array.from({ length: length + 1 }, () => new Float64Array(classCount + 1).fill(Infinity));
+      for (let index = 1; index <= classCount; index += 1) {
+        lower[1][index] = 1;
+        variance[1][index] = 0;
+      }
+      for (let end = 2; end <= length; end += 1) {
+        let sum = 0, sumSquares = 0, weight = 0, currentVariance = 0;
+        for (let offset = 1; offset <= end; offset += 1) {
+          const start = end - offset + 1;
+          const value = data[start - 1];
+          weight += 1;
+          sum += value;
+          sumSquares += value * value;
+          currentVariance = sumSquares - sum * sum / weight;
+          const previous = start - 1;
+          if (previous > 0) {
+            for (let group = 2; group <= classCount; group += 1) {
+              const candidate = currentVariance + variance[previous][group - 1];
+              if (candidate < variance[end][group]) {
+                lower[end][group] = start;
+                variance[end][group] = candidate;
+              }
+            }
+          }
+        }
+        lower[end][1] = 1;
+        variance[end][1] = currentVariance;
+      }
+      const result = new Array(classCount + 1).fill(0);
+      result[0] = data[0];
+      result[classCount] = data[length - 1];
+      let end = length;
+      for (let group = classCount; group > 1; group -= 1) {
+        const index = Math.max(0, Math.round(lower[end][group]) - 2);
+        result[group - 1] = data[index];
+        end = Math.max(1, Math.round(lower[end][group]) - 1);
+      }
+      return result;
+    };
+
+    const automaticMapBreaks = (metricValues, scaleMaximum) => {
+      const positive = metricValues
+        .filter((value) => Number.isFinite(value) && value > 0 && value <= scaleMaximum);
+      const unique = [...new Set(positive)];
+      if (unique.length < 5) return equalIntervalBreaks(scaleMaximum);
+      const raw = jenksBreaks([...positive, scaleMaximum], 5).slice(1, -1);
+      const valid = raw.length === 4
+        && raw.every((value, index) => Number.isFinite(value)
+          && value > (index === 0 ? 0 : raw[index - 1])
+          && value < scaleMaximum);
+      return valid ? raw : equalIntervalBreaks(scaleMaximum);
+    };
+
+    const mapScaleContext = () => {
+      const cacheKey = [
+        filterStateKey(), state.mapUnit, state.mapClass, state.mapMetric,
+        state.mapScaleMax, state.mapBreaks
+      ].join("|");
+      if (mapScaleCache.has(cacheKey)) return mapScaleCache.get(cacheKey);
+      const { defs, map } = geoValues(state.mapUnit, state.mapClass);
+      const totalRows = filtered().length;
+      const metric = (value) => territoryMetric(state.mapMetric, value, defs[value.idx], state.mapClass, totalRows);
+      const metricValues = [...map.values()].map(metric).filter(Number.isFinite);
+      const manualMaximum = Number(state.mapScaleMax);
+      const scaleMaximum = manualMaximum > 0 ? manualMaximum : Math.max(1, ...metricValues);
+      const automatic = automaticMapBreaks(metricValues, scaleMaximum);
+      const requested = String(state.mapBreaks || "").split(",").map(Number);
+      const manual = requested.length === 4
+        && requested.every((value, index) => Number.isFinite(value)
+          && value > (index === 0 ? 0 : requested[index - 1])
+          && value < scaleMaximum);
+      if (state.mapBreaks && !manual) state.mapBreaks = "";
+      const innerBreaks = manual ? requested : automatic;
+      const boundaries = [0, ...innerBreaks, scaleMaximum];
+      return cachePut(mapScaleCache, cacheKey, {
+        boundaries, innerBreaks, manual, metricValues, scaleMaximum,
+        algorithm: manual ? "manual" : "jenks",
+        manualScale: manualMaximum > 0
+      }, 24);
+    };
+
+    const mapClassIndex = (value, boundaries) => {
+      for (let index = 1; index < boundaries.length - 1; index += 1) {
+        if (value <= boundaries[index]) return index - 1;
+      }
+      return 4;
+    };
+
+    const syncActiveMapBreaks = () => {
+      const context = mapScaleContext();
+      activeMapBreakFractions = context.boundaries.map((value) => value / context.scaleMaximum);
+      return context;
+    };
+
+    const paletteColor = (value) => {
+      const bounded = Math.max(0, Math.min(1, Number(value) || 0));
+      const classIndex = mapClassIndex(bounded, activeMapBreakFractions);
+      return paletteClassColors()[classIndex];
+    };
+
+    window.mapRamp = paletteColor;
+
+    const addSupplementalControls = () => {
+      const controls = document.getElementById("localControls");
+      if (!controls) return;
+      if (state.view === "treemap") {
+        const color = document.getElementById("treeColor");
+        if (color && !color.querySelector('option[value="count"]')) {
+          color.insertAdjacentHTML("afterbegin", '<option value="count">Количество · пастельная градация</option>');
+        }
+        if (color) color.value = state.treeColor;
+      }
+      if (state.view === "map") {
+        const mapUnit = document.getElementById("mapUnit");
+        if (mapUnit) {
+          mapUnit.onchange = () => {
+            const nextUnit = mapUnit.value;
+            if (nextUnit === state.mapUnit) return;
+            state.mapUnit = nextUnit;
+            state.mapBreaks = "";
+            state.mapScaleMax = "";
+            render();
+          };
+        }
+        const paletteOptions = Object.entries(paletteDefinitions)
+          .map(([value, definition]) => `<option value="${value}">${definition.label}</option>`)
+          .join("");
+        const customColors = state.mapPalette === "custom" ? `
+          <div class="site-map-palette-colors">
+            <label><span>Минимум <output>${state.mapColorLow.toUpperCase()}</output></span><input id="mapColorLow" type="color" value="${state.mapColorLow}"></label>
+            <label><span>Максимум <output>${state.mapColorHigh.toUpperCase()}</output></span><input id="mapColorHigh" type="color" value="${state.mapColorHigh}"></label>
+          </div>` : "";
+        const classificationSource = state.mapUnit === "settlement"
+          ? "по значениям населённых пунктов текущего фильтра"
+          : "по значениям муниципалитетов текущего фильтра";
+        const paletteHint = `Цвет всегда показывает выбранный числовой показатель. Автоматические границы пяти классов рассчитываются методом Дженкса отдельно ${classificationSource}.`;
+        controls.insertAdjacentHTML("beforeend", `
+          <div class="field"><label for="mapPalette">Палитра числовой шкалы</label>
+          <select id="mapPalette">${paletteOptions}</select>
+          <div class="site-map-palette-preview" aria-label="Пять цветовых классов">${paletteClassColors().map((color) => `<span style="background:${color}"></span>`).join("")}</div>
+          ${customColors}<p class="site-map-palette-hint">${paletteHint}</p></div>`);
+        const palette = document.getElementById("mapPalette");
+        palette.value = state.mapPalette;
+        palette.onchange = () => { state.mapPalette = palette.value; render(); };
+        ["mapColorLow", "mapColorHigh"].forEach((key) => {
+          const input = document.getElementById(key);
+          if (input) input.onchange = () => { state[key] = input.value.toLowerCase(); render(); };
+        });
+        controls.insertAdjacentHTML("beforeend", `
+          <div class="field"><label for="mapLabels">Подписи на карте</label>
+          <select id="mapLabels"><option value="auto">Авто по масштабу</option><option value="centers">Только ключевые центры</option><option value="off">Без подписей</option></select></div>`);
+        const labels = document.getElementById("mapLabels");
+        labels.value = state.mapLabels;
+        labels.onchange = () => { state.mapLabels = labels.value; render(); };
+        const privacy = document.createElement("div");
+        privacy.className = "field";
+        privacy.innerHTML = `<label class="site-map-privacy"><input type="checkbox" ${suppressSmallValues ? "checked" : ""}>Скрывать малые значения n &lt; 5</label>`;
+        privacy.querySelector("input").onchange = (event) => {
+          suppressSmallValues = event.target.checked;
+          render();
+        };
+        controls.appendChild(privacy);
+      }
+      if (state.view === "dotogram" && state.dotUnit === "settlement") {
+        controls.insertAdjacentHTML("beforeend", `
+          <div class="field"><label for="dotLabels">Подписи точек</label>
+          <select id="dotLabels"><option value="outliers">Статистические выбросы</option><option value="top">Топ-10 значений</option><option value="off">Без подписей</option></select></div>`);
+        const labels = document.getElementById("dotLabels");
+        labels.value = state.dotLabels;
+        labels.onchange = () => { state.dotLabels = labels.value; render(); };
+      }
+    };
+
+    const pastelVolumeColor = (hex, ratio) => {
+      const value = String(hex || "#607d9d").replace("#", "");
+      const source = value.length === 3
+        ? value.split("").map((part) => parseInt(part + part, 16))
+        : [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16));
+      const intensity = Math.sqrt(Math.max(0, Math.min(1, ratio || 0)));
+      /*
+       * White labels are an approved part of the atlas. Mixing each class hue
+       * with a graphite base preserves a quiet pastel-like palette while keeping
+       * even yellow and orange classes readable.
+       */
+      const graphite = [28, 45, 68];
+      const colorWeight = .38 + intensity * .2;
+      const muted = source.map((channel, index) =>
+        Math.round(channel * colorWeight + graphite[index] * (1 - colorWeight))
+      );
+      return `rgb(${muted.join(",")})`;
+    };
+
+    const enhanceTreemap = () => {
+      if (state.view !== "treemap") return;
+      const items = treeItems();
+      const byCode = new Map(items.map((item) => [String(item.code), item]));
+      const maximum = Math.max(...items.map((item) => item.n), 1);
+      document.querySelectorAll(".tile").forEach((tile) => {
+        const item = byCode.get(tile.querySelector(".tile-code")?.textContent.trim());
+        if (item && state.treeColor === "count") {
+          tile.style.background = pastelVolumeColor(item.color, item.n / maximum);
+        }
+        tile.style.setProperty("color", "#ffffff", "important");
+      });
+      improveTreemapContrast();
+      if (state.treeColor === "count") {
+        document.getElementById("methodText").textContent = "Площадь показывает выбранный показатель, а насыщенность пастельного цвета — число смертей внутри текущего уровня. Чем темнее плитка, тем больше наблюдений.";
+      }
+    };
+
+    const enhanceHeatmapContrast = () => {
+      if (state.view !== "heatmap") return;
+      const luminance = (channels) => channels
+        .map((channel) => {
+          const value = channel / 255;
+          return value <= .03928 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4;
+        })
+        .reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+      document.querySelectorAll(".heat-cell").forEach((cell) => {
+        const channels = getComputedStyle(cell).backgroundColor.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+        if (!channels || channels.length !== 3) return;
+        const background = luminance(channels);
+        const whiteContrast = 1.05 / (background + .05);
+        const inkLuminance = 0;
+        const inkContrast = (Math.max(background, inkLuminance) + .05) / (Math.min(background, inkLuminance) + .05);
+        cell.style.color = whiteContrast >= inkContrast ? "#ffffff" : "#000000";
+        if (whiteContrast >= inkContrast) cell.style.textShadow = "0 1px 2px rgba(0,0,0,.28)";
+        else cell.style.textShadow = "none";
+      });
+    };
+
+    const enhanceMapPaletteLegend = () => {
+      if (state.view !== "map") return;
+      const ramp = document.querySelector(".legend-ramp");
+      if (!ramp) return;
+      const colors = paletteClassColors();
+      const paletteName = paletteDefinitions[state.mapPalette]?.label || paletteDefinitions.teal.label;
+      const { boundaries, innerBreaks, manual, metricValues, scaleMaximum } = syncActiveMapBreaks();
+      const counts = new Array(5).fill(0);
+      metricValues.forEach((value) => { counts[mapClassIndex(value, boundaries)] += 1; });
+      ramp.style.background = "none";
+      ramp.classList.add("site-map-discrete-ramp");
+      ramp.innerHTML = colors.map((color) => `<span style="background:${color}"></span>`).join("");
+      ramp.setAttribute("role", "img");
+      ramp.setAttribute("aria-label", `Палитра ${paletteName}, пять интервальных классов`);
+      const caption = document.createElement("div");
+      caption.className = "site-map-palette-caption";
+      caption.textContent = state.mapPalette === "custom"
+        ? `5 классов Дженкса · ${state.mapColorLow.toUpperCase()} → ${state.mapColorHigh.toUpperCase()}`
+        : `5 классов Дженкса · ${paletteName}`;
+      const range = ramp.nextElementSibling;
+      range?.insertAdjacentElement("afterend", caption);
+      const breaks = document.createElement("div");
+      breaks.className = "site-map-class-breaks";
+      breaks.innerHTML = colors.map((color, index) => {
+        const rawLower = boundaries[index];
+        const lower = state.mapMetric === "n" && index > 0 ? Math.floor(rawLower) + 1 : rawLower;
+        const upper = boundaries[index + 1];
+        const input = index < 4
+          ? `<input class="site-map-break-input" type="number" min="0" max="${scaleMaximum}" step="any" value="${mapBreakInputValue(innerBreaks[index])}" data-map-break="${index}" aria-label="Верхняя граница класса ${index + 1}">`
+          : '<span class="site-map-break-auto">авто</span>';
+        return `<div class="site-map-class-row"><i style="background:${color}"></i><span class="site-map-class-label"><span>${formatTerritoryMetric(state.mapMetric, lower)}–${formatTerritoryMetric(state.mapMetric, upper)}</span><small>(${counts[index]} шт.)</small></span>${input}</div>`;
+      }).join("");
+      const classificationSource = state.mapUnit === "settlement" ? "по НП" : "по муниципалитетам";
+      breaks.insertAdjacentHTML("beforeend", `<div class="site-map-break-actions"><span>${manual ? "границы настроены вручную" : `автоматические интервалы Дженкса · ${classificationSource}`}</span><button type="button" id="mapBreaksReset"${manual ? "" : " disabled"}>Сбросить в авто</button></div>`);
+      caption.insertAdjacentElement("afterend", breaks);
+      if (motionDuration() && typeof breaks.animate === "function") {
+        breaks.animate(
+          [{ opacity: .45, transform: "translateX(4px)" }, { opacity: 1, transform: "translateX(0)" }],
+          { duration: Math.min(motionDuration(), 210), easing: "ease-out" }
+        );
+      }
+      const inputs = [...breaks.querySelectorAll(".site-map-break-input")];
+      const applyBreaks = () => {
+        const values = inputs.map((input) => Number(input.value));
+        const valid = values.every((value, index) => Number.isFinite(value)
+          && value > (index === 0 ? 0 : values[index - 1])
+          && value < scaleMaximum);
+        inputs.forEach((input) => {
+          input.classList.toggle("invalid", !valid);
+          input.setCustomValidity(valid ? "" : "Границы должны возрастать и находиться между 0 и максимумом шкалы");
+        });
+        if (!valid) {
+          inputs.find((input) => !input.checkValidity())?.reportValidity();
+          return;
+        }
+        state.mapBreaks = values.join(",");
+        render();
+      };
+      inputs.forEach((input) => {
+        input.addEventListener("change", applyBreaks);
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") applyBreaks();
+        });
+      });
+      breaks.querySelector("#mapBreaksReset")?.addEventListener("click", () => {
+        state.mapBreaks = "";
+        render();
+      });
+    };
+
+    const dotMetricValue = (value, definition) => rateBase(state.dotMetric)
+      ? rateValue(value.selected, definition, state.dotMetric)
+      : state.dotMetric === "share"
+      ? (state.dotClass === "all" ? value.total / Math.max(filtered().length, 1) * 100 : value.selected / value.total * 100)
+      : state.dotMetric === "median" ? quantile(value.ages, .5)
+        : state.dotMetric === "pgpzh" ? value.pgpzh : value.selected;
+
+    const formatDotValue = (value) => state.dotMetric === "share"
+      ? pct(value) : state.dotMetric === "median" || rateBase(state.dotMetric) ? DF.format(value) : fmt(value);
+
+    const dotColor = (value) => {
+      if (state.dotClass !== "all") return DATA.classes[+state.dotClass]?.color || "#356ae6";
+      const leading = value.classes.indexOf(Math.max(...value.classes));
+      return DATA.classes[leading]?.color || "#667085";
+    };
+
+    const drawDotAxis = (chart, scale, domainMin, domainMax, width, height, left, top, bottom) => {
+      const rootScaled = state.dotMetric === "n" || state.dotMetric === "pgpzh" || Boolean(rateBase(state.dotMetric));
+      for (let index = 0; index <= 5; index += 1) {
+        const fraction = index / 5;
+        const value = domainMin + (domainMax - domainMin) * (rootScaled ? fraction ** 2 : fraction);
+        const x = scale(value);
+        chart.appendChild(svg("line", { x1: x, y1: top, x2: x, y2: height - bottom, class: "gridline" }));
+        textNode(chart, x, height - 23, formatDotValue(value), "axis-label", "middle");
+      }
+      const median = quantile(window.__dotValuesForAxis || [], .5);
+      if (median != null) {
+        const x = scale(median);
+        chart.appendChild(svg("line", { x1: x, y1: top, x2: x, y2: height - bottom, class: "dot-median-line" }));
+        textNode(chart, x + 5, top + 12, `медиана ${formatDotValue(median)}`, "dot-median-label", "start");
+      }
+    };
+
+    const drawNonOverlappingLabels = (chart, candidates, width, height, top, bottom) => {
+      const boxes = [];
+      candidates.forEach((candidate) => {
+        const short = candidate.label.length > 22 ? `${candidate.label.slice(0, 21)}…` : candidate.label;
+        const label = `${short} · ${formatDotValue(candidate.value)}`;
+        const boxWidth = Math.min(168, Math.max(76, label.length * 5.5 + 14));
+        const boxHeight = 17;
+        const attempts = [
+          [10, -19], [10, 5], [-boxWidth - 10, -19], [-boxWidth - 10, 5],
+          [14, -38], [14, 24], [-boxWidth - 14, -38], [-boxWidth - 14, 24]
+        ];
+        let chosen = null;
+        for (const [dx, dy] of attempts) {
+          const box = { x: candidate.x + dx, y: candidate.y + dy, w: boxWidth, h: boxHeight };
+          const inside = box.x >= 3 && box.x + box.w <= width - 3 && box.y >= top && box.y + box.h <= height - bottom;
+          const overlaps = boxes.some((other) => !(box.x + box.w + 3 < other.x || other.x + other.w + 3 < box.x || box.y + box.h + 3 < other.y || other.y + other.h + 3 < box.y));
+          if (inside && !overlaps) { chosen = box; break; }
+        }
+        if (!chosen) return;
+        boxes.push(chosen);
+        const edgeX = chosen.x > candidate.x ? chosen.x : chosen.x + chosen.w;
+        const edgeY = chosen.y + chosen.h / 2;
+        chart.appendChild(svg("line", { x1: candidate.x, y1: candidate.y, x2: edgeX, y2: edgeY, class: "dot-label-leader" }));
+        chart.appendChild(svg("rect", { x: chosen.x, y: chosen.y, width: chosen.w, height: chosen.h, rx: 5, class: "dot-label-bg" }));
+        textNode(chart, chosen.x + 6, chosen.y + 12, label, "dot-label", "start");
+      });
+    };
+
+    const enhanceDotogram = () => {
+      if (state.view !== "dotogram") return;
+      const viz = document.getElementById("viz");
+      const availableWidth = Math.max(760, Math.round(viz.clientWidth - 2));
+      const availableHeight = Math.max(360, Math.round(viz.clientHeight - 36));
+      const { defs, map } = geoValues(state.dotUnit, state.dotClass);
+      const values = [...map.values()].map((value) => ({ ...value, value: dotMetricValue(value, defs[value.idx]) })).filter((value) => value.value != null && Number.isFinite(value.value));
+      if (!values.length) {
+        document.getElementById("viz").innerHTML = '<div class="empty">Нет данных для выбранных фильтров.</div>';
+        return;
+      }
+      const rawValues = values.map((value) => value.value);
+      const observedMin = Math.min(...rawValues);
+      const observedMax = Math.max(...rawValues);
+      const domainMin = state.dotMetric === "median" ? Math.max(0, observedMin - 5) : 0;
+      const domainMax = observedMax > domainMin ? observedMax * 1.08 : domainMin + 1;
+      window.__dotValuesForAxis = rawValues;
+      const scaleFraction = (value) => {
+        const fraction = Math.max(0, Math.min(1, (value - domainMin) / (domainMax - domainMin || 1)));
+        return state.dotMetric === "n" || state.dotMetric === "pgpzh" || Boolean(rateBase(state.dotMetric)) ? Math.sqrt(fraction) : fraction;
+      };
+
+      if (state.dotUnit === "mo") {
+        values.sort((left, right) => right.value - left.value);
+        const width = availableWidth, top = 30, bottom = 42;
+        const left = Math.max(205, Math.min(270, width * .23)), right = Math.max(62, width * .065);
+        const height = availableHeight;
+        const rowHeight = Math.max(8.5, (height - top - bottom) / Math.max(values.length, 1));
+        const scale = (value) => left + scaleFraction(value) * (width - left - right);
+        const chart = svg("svg", { viewBox: `0 0 ${width} ${height}`, class: "svg-chart dotogram-ranked" });
+        drawDotAxis(chart, scale, domainMin, domainMax, width, height, left, top, bottom);
+        values.forEach((value, index) => {
+          const definition = defs[value.idx];
+          const y = top + index * rowHeight + 15;
+          chart.appendChild(svg("line", { x1: left, y1: y, x2: width - right, y2: y, class: "dot-row-guide" }));
+          textNode(chart, left - 12, y + 4, definition.name, "row-label", "end");
+          chart.appendChild(svg("line", { x1: scale(domainMin), y1: y, x2: scale(value.value), y2: y, stroke: dotColor(value), "stroke-width": 3, opacity: .42 }));
+          const point = svg("circle", { cx: scale(value.value), cy: y, r: 7, fill: dotColor(value), stroke: "#fff", "stroke-width": 1.5 });
+          chart.appendChild(point);
+          const anchor = scale(value.value) > width - right - 65 ? "end" : "start";
+          textNode(chart, scale(value.value) + (anchor === "end" ? -10 : 10), y + 4, formatDotValue(value.value), "dot-value-label", anchor);
+          addTip(point, `<b>${esc(definition.name)}</b><div class="tip-grid"><span>${territoryMetricLabel(state.dotMetric)}</span><strong>${formatDotValue(value.value)}</strong>${rateBase(state.dotMetric) ? `<span>Расчёт</span><strong>${rateFormula(value.selected, definition, state.dotMetric)}</strong>` : ""}<span>Население ${DATA.populationYear}</span><strong>${populationValue(definition) ? fmt(populationValue(definition)) : "н/д"}</strong><span>Всего смертей</span><strong>${fmt(value.total)}</strong><span>Выбранная причина</span><strong>${fmt(value.selected)}</strong><span>Структура</span><strong>${esc(topClasses(value))}</strong></div>`);
+        });
+        document.getElementById("viz").innerHTML = "";
+        document.getElementById("viz").appendChild(chart);
+        document.getElementById("viz").insertAdjacentHTML("beforeend", '<div class="chart-note">Муниципалитеты отсортированы по значению. Линия и точка показывают одновременно ранг и величину показателя; вертикальный пунктир — медиану.</div>');
+      } else {
+        const groupTotals = new Map();
+        values.forEach((value) => {
+          const municipality = defs[value.idx].municipalityIndex;
+          groupTotals.set(municipality, (groupTotals.get(municipality) || 0) + value.total);
+        });
+        const groups = [...groupTotals].sort((left, right) => right[1] - left[1]).map(([index]) => index);
+        const groupPosition = new Map(groups.map((index, position) => [index, position]));
+        const width = availableWidth, top = 34, bottom = 46;
+        const left = Math.max(170, Math.min(230, width * .19)), right = Math.max(130, Math.min(180, width * .15));
+        const height = availableHeight;
+        const rowHeight = Math.max(8.5, (height - top - bottom) / Math.max(groups.length, 1));
+        const scale = (value) => left + scaleFraction(value) * (width - left - right);
+        const chart = svg("svg", { viewBox: `0 0 ${width} ${height}`, class: "svg-chart dotogram-groups" });
+        drawDotAxis(chart, scale, domainMin, domainMax, width, height, left, top, bottom);
+        groups.forEach((municipality, index) => {
+          const y = top + index * rowHeight + 15;
+          chart.appendChild(svg("line", { x1: left, y1: y, x2: width - right, y2: y, class: "dot-row-guide" }));
+          textNode(chart, left - 12, y + 4, DATA.municipalities[municipality]?.name || "Не указан", "row-label", "end");
+        });
+        const points = [];
+        values.forEach((value) => {
+          const definition = defs[value.idx];
+          const row = groupPosition.get(definition.municipalityIndex);
+          const y = top + row * rowHeight + 15 + (hashJitter(value.idx) - .5) * 10;
+          const x = scale(value.value);
+          const point = svg("circle", { cx: x, cy: y, r: 5.5, fill: dotColor(value), opacity: .82, stroke: "#fff", "stroke-width": 1.2 });
+          chart.appendChild(point);
+          points.push({ x, y, label: definition.name, value: value.value, source: value });
+          addTip(point, `<b>${esc(definition.name)}</b><div class="tip-grid"><span>Муниципалитет</span><strong>${esc(definition.municipality)}</strong><span>${territoryMetricLabel(state.dotMetric)}</span><strong>${formatDotValue(value.value)}</strong>${rateBase(state.dotMetric) ? `<span>Расчёт</span><strong>${rateFormula(value.selected, definition, state.dotMetric)}</strong>` : ""}<span>Население ${DATA.populationYear}</span><strong>${populationValue(definition) ? fmt(populationValue(definition)) : "н/д"}</strong><span>Всего смертей</span><strong>${fmt(value.total)}</strong><span>Выбранная причина</span><strong>${fmt(value.selected)}</strong><span>Структура</span><strong>${esc(topClasses(value))}</strong></div>`);
+        });
+        let labelled = [];
+        if (state.dotLabels === "top") labelled = [...points].sort((left, right) => right.value - left.value).slice(0, 10);
+        if (state.dotLabels === "outliers") {
+          const q1 = quantile(rawValues, .25), q3 = quantile(rawValues, .75), threshold = q3 + 1.5 * (q3 - q1);
+          labelled = points.filter((point) => point.value > threshold).sort((left, right) => right.value - left.value).slice(0, 12);
+          if (labelled.length < 5) {
+            const existing = new Set(labelled.map((point) => point.source.idx));
+            labelled.push(...[...points].sort((left, right) => right.value - left.value).filter((point) => !existing.has(point.source.idx)).slice(0, 5 - labelled.length));
+          }
+        }
+        drawNonOverlappingLabels(chart, labelled, width, height, top, bottom);
+        document.getElementById("viz").innerHTML = "";
+        document.getElementById("viz").appendChild(chart);
+        document.getElementById("viz").insertAdjacentHTML("beforeend", `<div class="chart-note">Каждая строка — муниципальная территория, каждая точка — НП. ${state.dotLabels === "outliers" ? "Подписаны выбросы по правилу Q3 + 1,5×IQR и несколько крупнейших значений." : state.dotLabels === "top" ? "Подписаны десять крупнейших значений." : "Подписи точек отключены."} Вертикальный пунктир — медиана.</div>`);
+      }
+      delete window.__dotValuesForAxis;
+      document.getElementById("methodText").textContent = `Dotogram показывает территориальный контекст: НП сгруппированы по муниципалитетам, а муниципалитеты отображаются ранжированным точечным графиком. Подписи выделяют только статистически необычные или крупнейшие значения.${rateBase(state.dotMetric) ? ` Показатель рассчитан как смерти в текущем фильтре / (население ${DATA.populationYear} × ${rateYearsLabel()}) × ${fmt(rateBase(state.dotMetric))}; результат приведён к среднему за один год.${state.sex !== "all" || state.age !== "all" ? " Знаменатель — общая численность населения, а не выбранная половозрастная группа." : ""}` : state.dotMetric === "n" || state.dotMetric === "pgpzh" ? " Для абсолютных значений применяется корневая шкала, чтобы крупнейший центр не сжимал остальные территории у нуля." : ""}`;
+    };
+
+    const MAP_WIDTH = 760;
+    const MAP_HEIGHT = 790;
+    let mapRuntime = null;
+    let labelTimer = 0;
+    let viewportFrame = 0;
+    let mapTooltipKey = "";
+    let selectedMapObject = null;
+    const centerByMunicipality = new Map();
+    DATA.settlements.forEach((definition, index) => {
+      const municipality = definition.municipalityIndex;
+      const population = populationValue(definition) || 0;
+      const current = centerByMunicipality.get(municipality);
+      if (!current || population > current.population) {
+        centerByMunicipality.set(municipality, { index, population });
+      }
+    });
+    const centerSettlementIndexes = new Set([...centerByMunicipality.values()].map((item) => item.index));
+    const regionalCapitalIndex = DATA.settlements.reduce((best, definition, index) =>
+      (populationValue(definition) || 0) > (populationValue(DATA.settlements[best]) || 0) ? index : best, 0);
+
+    const settlementVisual = (definition) => {
+      const population = populationValue(definition);
+      if (!population) return { diameter: 7, ring: 0, missing: true, label: "нет данных" };
+      if (population <= 1000) return { diameter: 6, ring: 0, label: "до 1 тыс." };
+      if (population <= 2500) return { diameter: 8, ring: 0, label: "1–2,5 тыс." };
+      if (population <= 5000) return { diameter: 12, ring: 0, label: "2,5–5 тыс." };
+      if (population <= 10000) return { diameter: 17, ring: 0, label: "5–10 тыс." };
+      if (population <= 20000) return { diameter: 21, ring: 0, label: "10–20 тыс." };
+      if (population <= 40000) return { diameter: 26, ring: 0, label: "20–40 тыс." };
+      if (population <= 200000) return { diameter: 42, ring: 8, label: "40–200 тыс." };
+      return { diameter: 62, ring: 11, label: "свыше 200 тыс." };
+    };
+
+    const populationLegendHtml = () => {
+      const ranges = [
+        { label: "до 1 тыс.", test: (value) => value > 0 && value <= 1000, visual: { diameter: 6, ring: 0 } },
+        { label: "1–2,5 тыс.", test: (value) => value > 1000 && value <= 2500, visual: { diameter: 8, ring: 0 } },
+        { label: "2,5–5 тыс.", test: (value) => value > 2500 && value <= 5000, visual: { diameter: 12, ring: 0 } },
+        { label: "5–10 тыс.", test: (value) => value > 5000 && value <= 10000, visual: { diameter: 17, ring: 0 } },
+        { label: "10–20 тыс.", test: (value) => value > 10000 && value <= 20000, visual: { diameter: 21, ring: 0 } },
+        { label: "20–40 тыс.", test: (value) => value > 20000 && value <= 40000, visual: { diameter: 26, ring: 0 } },
+        { label: "40–200 тыс.", test: (value) => value > 40000 && value <= 200000, visual: { diameter: 42, ring: 8 } },
+        { label: "> 200 тыс.", test: (value) => value > 200000, visual: { diameter: 62, ring: 11 } }
+      ];
+      const rows = ranges.map((range) => {
+        const count = DATA.settlements.filter((definition) => range.test(populationValue(definition) || 0)).length;
+        const kind = range.visual.ring ? " donut" : "";
+        const displaySize = range.visual.diameter === 42 ? 24 : range.visual.diameter === 62 ? 30 : range.visual.diameter;
+        return `<span class="site-population-size-item"><i class="site-population-symbol${kind}" style="--symbol-size:${displaySize}px;--ring-size:${Math.max(3, Math.min(range.visual.ring, 7))}px"></i><span>${range.label}</span><small>${count} шт.</small></span>`;
+      }).join("");
+      const missing = DATA.settlements.filter((definition) => !populationValue(definition)).length;
+      return `<div class="site-population-size-legend"><b>Размер · население ${DATA.populationYear}</b><div>${rows}</div><p>Пунктир — численность не указана (${missing} шт.). Размер не меняется при выборе показателя.</p></div>`;
+    };
+
+    const settlementLabelLegendHtml = () => `
+      <div class="site-settlement-label-legend">
+        <b>Подписи · тип НП и масштаб</b>
+        <div>
+          <span class="city">Город</span>
+          <span class="settlement">Остальные НП</span>
+        </div>
+        <p>Размер адаптируется к окну карты: города 15–18 px, остальные НП 10–13 px. При зуме подписи не раздуваются.</p>
+      </div>`;
+
+    const municipalityLabelLegendHtml = () => `
+      <div class="site-settlement-label-legend">
+        <b>Подписи · ключевые города</b>
+        <div><span class="city">● Городской центр</span></div>
+        <p>Опорные точки и названия городов сохраняются поверх полигонов; размер 15–18 px адаптируется к окну карты.</p>
+      </div>`;
+
+    const syncMapPanelHeight = () => {
+      if (!mapRuntime?.root?.isConnected) return;
+      /*
+       * The map and side panel are grid siblings. Let grid stretching keep their
+       * outer boxes identical; copying a rounded SVG height back into the panel
+       * created a 3–4 px feedback error on some 16:9 viewports.
+       */
+      mapRuntime.side.style.removeProperty("height");
+      mapRuntime.side.style.removeProperty("max-height");
+    };
+
+    const createMapRuntime = () => {
+      mapRuntime?.panelResizeObserver?.disconnect();
+      const root = document.createElement("div");
+      root.className = "map-layout site-optimized-map";
+      const stage = document.createElement("div");
+      stage.className = "site-map-canvas site-map-stage";
+      const mapSvg = svg("svg", {
+        viewBox: mapViewport.join(" "),
+        class: "svg-chart site-map-svg",
+        "aria-label": "Интерактивная карта населённых пунктов и муниципальных территорий",
+        preserveAspectRatio: "xMidYMid meet"
+      });
+      const polygonLayer = svg("g", { class: "site-map-polygon-layer" });
+      const markerLayer = svg("g", { class: "site-map-marker-layer" });
+      const labelLayer = svg("g", { class: "site-map-label-layer", "aria-hidden": "true" });
+      const polygonEntries = DATA.municipalities.map((definition, index) => {
+        const path = svg("path", {
+          d: geoPath(definition.geometry, MAP_WIDTH, MAP_HEIGHT),
+          fill: "#e8eff5",
+          stroke: "#fff",
+          "stroke-width": 1.2,
+          "stroke-linejoin": "round",
+          "stroke-linecap": "round",
+          "vector-effect": "non-scaling-stroke",
+          "data-map-kind": "mo",
+          "data-index": index
+        });
+        polygonLayer.appendChild(path);
+        return { path, definition, index };
+      });
+      const settlementOrder = DATA.settlements
+        .map((definition, index) => ({ definition, index, population: populationValue(definition) || 0 }))
+        .sort((left, right) => right.population - left.population);
+      const markerEntries = new Array(DATA.settlements.length);
+      settlementOrder.forEach(({ definition, index }) => {
+        const [x, y] = project(definition.x3857, definition.y3857, MAP_WIDTH, MAP_HEIGHT);
+        const visual = settlementVisual(definition);
+        const group = svg("g", {
+          class: "site-map-marker",
+          "data-map-kind": "settlement",
+          "data-index": index,
+          role: "button",
+          tabindex: "0"
+        });
+        const halo = svg("circle", { cx: x, cy: y, fill: "none", stroke: "#f4b400", display: "none", class: "site-map-selection-wave", "pointer-events": "none" });
+        group.appendChild(halo);
+        let main, outer, inner;
+        if (visual.ring) {
+          main = svg("circle", { cx: x, cy: y, fill: "none", stroke: "#61758a", "pointer-events": "none" });
+          outer = svg("circle", { cx: x, cy: y, fill: "none", stroke: "#25344a", "pointer-events": "none" });
+          inner = svg("circle", { cx: x, cy: y, fill: "none", stroke: "#25344a", "pointer-events": "none" });
+          group.append(main, outer, inner);
+        } else {
+          main = svg("circle", { cx: x, cy: y, fill: "#61758a", stroke: "#25344a", "pointer-events": "none" });
+          if (visual.missing) main.setAttribute("stroke-dasharray", "2 1.5");
+          group.appendChild(main);
+        }
+        main.classList.add("site-map-marker-main");
+        const hit = svg("circle", { cx: x, cy: y, fill: "transparent", stroke: "none", class: "site-map-hit" });
+        group.appendChild(hit);
+        markerLayer.appendChild(group);
+        markerEntries[index] = { group, main, outer, inner, halo, hit, visual, definition, x, y, index };
+      });
+      mapSvg.append(polygonLayer, markerLayer, labelLayer);
+      stage.appendChild(mapSvg);
+      const controls = document.createElement("div");
+      controls.className = "site-map-controls";
+      controls.setAttribute("aria-label", "Управление масштабом карты");
+      controls.innerHTML = '<button type="button" data-map-zoom="in" aria-label="Приблизить карту">+</button><button type="button" data-map-zoom="out" aria-label="Отдалить карту">−</button><button type="button" data-map-zoom="reset">Сброс</button><output data-map-zoom-level>1×</output>';
+      stage.appendChild(controls);
+      const side = document.createElement("aside");
+      side.className = "map-side";
+      side.innerHTML = '<div class="map-legend"></div><section class="site-map-selection-card" hidden></section><h3>Наибольшие значения</h3><div class="rank-list"></div>';
+      root.append(stage, side);
+      els.viz.innerHTML = "";
+      els.viz.appendChild(root);
+      mapRuntime = {
+        root, stage, svg: mapSvg, controls, side,
+        legend: side.querySelector(".map-legend"),
+        selection: side.querySelector(".site-map-selection-card"),
+        rank: side.querySelector(".rank-list"),
+        polygonLayer, markerLayer, labelLayer, polygonEntries, markerEntries,
+        defs: [], values: new Map(), unit: null, context: null, lastUpdateMs: 0,
+        drag: null, dragMoved: false, panelResizeObserver: null
+      };
+      if (typeof ResizeObserver !== "undefined") {
+        mapRuntime.panelResizeObserver = new ResizeObserver(() => {
+          syncMapPanelHeight();
+          syncMapSymbolSizes();
+          scheduleMapLabels(20);
+        });
+        mapRuntime.panelResizeObserver.observe(mapSvg);
+      }
+      requestAnimationFrame(syncMapPanelHeight);
+
+      controls.querySelector('[data-map-zoom="in"]').onclick = () => zoomMap(0.8);
+      controls.querySelector('[data-map-zoom="out"]').onclick = () => zoomMap(1.25);
+      controls.querySelector('[data-map-zoom="reset"]').onclick = () => {
+        mapViewport = [0, 0, MAP_WIDTH, MAP_HEIGHT];
+        applyMapViewport();
+        setStatus("Охват карты сброшен.");
+      };
+      mapSvg.addEventListener("wheel", (event) => {
+        if (event.target.closest("select")) return;
+        event.preventDefault();
+        const bounds = mapSvg.getBoundingClientRect();
+        const metrics = mapRenderMetrics();
+        const centerX = mapViewport[0] + (event.clientX - bounds.left - metrics.offsetX) / metrics.scale;
+        const centerY = mapViewport[1] + (event.clientY - bounds.top - metrics.offsetY) / metrics.scale;
+        zoomMap(event.deltaY > 0 ? 1.16 : 0.86, centerX, centerY);
+      }, { passive: false });
+      mapSvg.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
+        mapRuntime.dragMoved = false;
+        mapRuntime.drag = { x: event.clientX, y: event.clientY, view: [...mapViewport], moved: false };
+        mapSvg.setPointerCapture(event.pointerId);
+        mapSvg.classList.add("is-panning");
+        mapRuntime.labelLayer.classList.add("is-moving");
+      });
+      mapSvg.addEventListener("pointermove", (event) => {
+        if (!mapRuntime.drag) {
+          const target = event.target.closest("[data-map-kind]");
+          if (target) showMapTooltip(event, target);
+          else {
+            mapTooltipKey = "";
+            hideTip();
+          }
+          return;
+        }
+        const metrics = mapRenderMetrics();
+        const dx = (event.clientX - mapRuntime.drag.x) / metrics.scale;
+        const dy = (event.clientY - mapRuntime.drag.y) / metrics.scale;
+        if (Math.abs(dx) + Math.abs(dy) > 1) mapRuntime.drag.moved = true;
+        mapViewport = [mapRuntime.drag.view[0] - dx, mapRuntime.drag.view[1] - dy, mapRuntime.drag.view[2], mapRuntime.drag.view[3]];
+        applyMapViewport();
+      });
+      const finishDrag = () => {
+        mapRuntime.dragMoved = Boolean(mapRuntime.drag?.moved);
+        mapRuntime.drag = null;
+        mapSvg.classList.remove("is-panning");
+        scheduleMapLabels(40);
+      };
+      mapSvg.addEventListener("pointerup", finishDrag);
+      mapSvg.addEventListener("pointercancel", finishDrag);
+      mapSvg.addEventListener("pointerleave", (event) => {
+        if (!mapRuntime.drag) {
+          mapTooltipKey = "";
+          hideTip();
+        }
+      });
+      mapSvg.addEventListener("click", (event) => {
+        if (mapRuntime.dragMoved) {
+          mapRuntime.dragMoved = false;
+          return;
+        }
+        const target = event.target.closest("[data-map-kind]");
+        if (!target) {
+          selectedMapObject = null;
+          syncMapSelection();
+          return;
+        }
+        selectMapObject(target.dataset.mapKind, +target.dataset.index);
+      });
+      mapSvg.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        const target = event.target.closest("[data-map-kind]");
+        if (!target) return;
+        event.preventDefault();
+        selectMapObject(target.dataset.mapKind, +target.dataset.index);
+      });
+      return mapRuntime;
+    };
+
+    const clampMapViewport = () => {
+      const [x, y, width, height] = mapViewport;
+      const marginX = width * .08, marginY = height * .08;
+      const minX = -marginX, maxX = MAP_WIDTH - width + marginX;
+      const minY = -marginY, maxY = MAP_HEIGHT - height + marginY;
+      mapViewport = [
+        Math.max(minX, Math.min(maxX, x)),
+        Math.max(minY, Math.min(maxY, y)),
+        width,
+        height
+      ];
+    };
+
+    const mapRenderMetrics = () => {
+      const bounds = mapRuntime?.svg.getBoundingClientRect() || { width: MAP_WIDTH, height: MAP_HEIGHT };
+      const scale = Math.min(
+        bounds.width / Math.max(mapViewport[2], 1),
+        bounds.height / Math.max(mapViewport[3], 1)
+      );
+      const contentWidth = mapViewport[2] * scale;
+      const contentHeight = mapViewport[3] * scale;
+      return {
+        bounds,
+        scale,
+        unit: 1 / Math.max(scale, .0001),
+        contentWidth,
+        contentHeight,
+        offsetX: (bounds.width - contentWidth) / 2,
+        offsetY: (bounds.height - contentHeight) / 2
+      };
+    };
+
+    const mapUserUnitsPerPixel = () => mapRenderMetrics().unit;
+
+    const mapCanvasProgress = () => {
+      const width = mapRuntime?.svg.getBoundingClientRect().width || 800;
+      return Math.max(0, Math.min(1, (width - 800) / 1050));
+    };
+
+    const markerScreenScale = (visual) => {
+      const gain = mapCanvasProgress() * .35;
+      const damping = visual.diameter >= 42 ? .55 : visual.diameter >= 26 ? .8 : 1;
+      return 1 + gain * damping;
+    };
+
+    const labelScreenScale = () => 1 + mapCanvasProgress() * .2;
+
+    const syncMapSymbolSizes = () => {
+      if (!mapRuntime) return;
+      const unit = mapUserUnitsPerPixel();
+      mapRuntime.markerEntries.forEach((entry) => {
+        const displayScale = markerScreenScale(entry.visual);
+        const outerRadius = entry.visual.diameter / 2;
+        const ringWidth = entry.visual.ring;
+        const haloRadius = outerRadius + 3.5;
+        entry.group.dataset.screenScale = displayScale.toFixed(3);
+        entry.group.dataset.screenDiameter = (outerRadius * 2 * displayScale).toFixed(2);
+        if (!entry.baseSizeReady) {
+          entry.halo.setAttribute("r", haloRadius);
+          entry.halo.setAttribute("stroke-width", 2.2);
+          entry.hit.setAttribute("r", Math.max(8, outerRadius + 2));
+          if (entry.visual.ring) {
+            const innerRadius = outerRadius - ringWidth;
+            entry.main.setAttribute("r", outerRadius - ringWidth / 2);
+            entry.main.setAttribute("stroke-width", ringWidth);
+            entry.outer.setAttribute("r", outerRadius);
+            entry.outer.setAttribute("stroke-width", .7);
+            entry.inner.setAttribute("r", innerRadius);
+            entry.inner.setAttribute("stroke-width", .7);
+          } else {
+            entry.main.setAttribute("r", outerRadius);
+            entry.main.setAttribute("stroke-width", .7);
+            if (entry.visual.missing) entry.main.setAttribute("stroke-dasharray", "2 1.5");
+          }
+          entry.baseSizeReady = true;
+        }
+        const markerScale = unit * displayScale;
+        entry.group.setAttribute(
+          "transform",
+          `translate(${entry.x} ${entry.y}) scale(${markerScale}) translate(${-entry.x} ${-entry.y})`
+        );
+      });
+      const zoom = MAP_WIDTH / mapViewport[2];
+      const output = mapRuntime.controls.querySelector("[data-map-zoom-level]");
+      if (output) output.textContent = `${DF.format(zoom)}×`;
+    };
+
+    const scheduleMapLabels = (delay = 110) => {
+      window.clearTimeout(labelTimer);
+      labelTimer = window.setTimeout(renderMapLabels, delay);
+    };
+
+    const applyMapViewport = () => {
+      if (!mapRuntime) return;
+      clampMapViewport();
+      mapRuntime.labelLayer.classList.add("is-moving");
+      if (viewportFrame) return;
+      viewportFrame = requestAnimationFrame(() => {
+        viewportFrame = 0;
+        if (!mapRuntime) return;
+        mapRuntime.svg.setAttribute("viewBox", mapViewport.join(" "));
+        syncMapSymbolSizes();
+        scheduleMapLabels();
+      });
+    };
+
+    const zoomMap = (factor, centerX = mapViewport[0] + mapViewport[2] / 2, centerY = mapViewport[1] + mapViewport[3] / 2) => {
+      const nextWidth = Math.max(MAP_WIDTH / 10, Math.min(MAP_WIDTH, mapViewport[2] * factor));
+      const nextHeight = nextWidth * MAP_HEIGHT / MAP_WIDTH;
+      const ratioX = (centerX - mapViewport[0]) / mapViewport[2];
+      const ratioY = (centerY - mapViewport[1]) / mapViewport[3];
+      mapViewport = [centerX - nextWidth * ratioX, centerY - nextHeight * ratioY, nextWidth, nextHeight];
+      applyMapViewport();
+    };
+
+    const labelPopulationThreshold = (zoom) => {
+      if (zoom < 1.5) return 40000;
+      if (zoom < 2.2) return 20000;
+      if (zoom < 3.2) return 10000;
+      if (zoom < 4.8) return 5000;
+      if (zoom < 6.5) return 1000;
+      return 0;
+    };
+
+    const labelFontSize = (definition, zoom) => {
+      const zoomProgress = Math.log2(Math.max(1, Math.min(10, zoom))) / Math.log2(10);
+      const screenScale = labelScreenScale();
+      if (definition.isCity) return 15 * screenScale;
+      return (10 + zoomProgress) * screenScale;
+    };
+
+    const renderMapLabels = () => {
+      if (!mapRuntime) return;
+      const layer = mapRuntime.labelLayer;
+      layer.innerHTML = "";
+      layer.classList.remove("is-moving");
+      const settlementMode = state.mapUnit === "settlement";
+      if (!settlementMode && state.mapUnit !== "mo") return;
+      if (state.mapLabels === "off") return;
+      const bounds = mapRuntime.svg.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) return;
+      const renderMetrics = mapRenderMetrics();
+      const zoom = MAP_WIDTH / mapViewport[2];
+      const threshold = labelPopulationThreshold(zoom);
+      const selectedIndex = settlementMode && selectedMapObject?.kind === "settlement" ? selectedMapObject.index : -1;
+      const candidates = mapRuntime.markerEntries
+        .filter((entry) => settlementMode ? entry.group.style.display !== "none" : Boolean(entry.definition.isCity))
+        .filter((entry) => {
+          if (!settlementMode) return true;
+          if (entry.index === selectedIndex) return true;
+          const center = centerSettlementIndexes.has(entry.index);
+          if (state.mapLabels === "centers") return center;
+          return entry.definition.isCity || center || (populationValue(entry.definition) || 0) >= threshold;
+        })
+        .sort((left, right) => {
+          const selectedDelta = Number(right.index === selectedIndex) - Number(left.index === selectedIndex);
+          if (selectedDelta) return selectedDelta;
+          const capitalDelta = Number(right.index === regionalCapitalIndex) - Number(left.index === regionalCapitalIndex);
+          if (capitalDelta) return capitalDelta;
+          const cityDelta = Number(Boolean(right.definition.isCity)) - Number(Boolean(left.definition.isCity));
+          if (cityDelta) return cityDelta;
+          const centerDelta = Number(centerSettlementIndexes.has(right.index)) - Number(centerSettlementIndexes.has(left.index));
+          if (centerDelta) return centerDelta;
+          return (populationValue(right.definition) || 0) - (populationValue(left.definition) || 0);
+        });
+      const placed = [];
+      const unit = renderMetrics.unit;
+      const toScreen = (x, y) => [
+        renderMetrics.offsetX + (x - mapViewport[0]) * renderMetrics.scale,
+        renderMetrics.offsetY + (y - mapViewport[1]) * renderMetrics.scale
+      ];
+      const toWorld = (x, y) => [
+        mapViewport[0] + (x - renderMetrics.offsetX) / renderMetrics.scale,
+        mapViewport[1] + (y - renderMetrics.offsetY) / renderMetrics.scale
+      ];
+      const markerObstacles = (settlementMode
+        ? mapRuntime.markerEntries.filter((entry) => entry.group.style.display !== "none")
+        : candidates)
+        .map((entry) => {
+          const [x, y] = toScreen(entry.x, entry.y);
+          const radius = settlementMode ? Math.max(3, entry.visual.diameter / 2 * markerScreenScale(entry.visual)) : 3.2;
+          return { index: entry.index, x: x - radius, y: y - radius, w: radius * 2, h: radius * 2 };
+        });
+      candidates.forEach((entry) => {
+        const [screenX, screenY] = toScreen(entry.x, entry.y);
+        const contentRight = renderMetrics.offsetX + renderMetrics.contentWidth;
+        const contentBottom = renderMetrics.offsetY + renderMetrics.contentHeight;
+        if (screenX < renderMetrics.offsetX - 40 || screenX > contentRight + 40
+          || screenY < renderMetrics.offsetY - 40 || screenY > contentBottom + 40) return;
+        const isCity = Boolean(entry.definition.isCity);
+        const font = labelFontSize(entry.definition, zoom);
+        const label = entry.definition.name.length > 28 ? `${entry.definition.name.slice(0, 27)}…` : entry.definition.name;
+        const widthFactor = isCity ? .6 : .54;
+        const width = Math.max(isCity ? 48 : 38, label.length * font * widthFactor + 7);
+        const height = font + 5;
+        const radius = settlementMode ? entry.visual.diameter / 2 * markerScreenScale(entry.visual) : 3.2;
+        const gap = radius + 6;
+        const attempts = [
+          [gap, -height / 2], [-gap - width, -height / 2],
+          [-width / 2, -gap - height], [-width / 2, gap],
+          [gap * .72, -gap * .72 - height], [-gap * .72 - width, -gap * .72 - height],
+          [gap * .72, gap * .72], [-gap * .72 - width, gap * .72]
+        ];
+        if (!settlementMode) {
+          const far = gap + font + 8;
+          const farther = far + font * 1.8 + 8;
+          attempts.push(
+            [far, -height / 2], [-far - width, -height / 2],
+            [-width / 2, -far - height], [-width / 2, far],
+            [far * .72, -far * .72 - height], [-far * .72 - width, -far * .72 - height],
+            [far * .72, far * .72], [-far * .72 - width, far * .72],
+            [farther, -height / 2], [-farther - width, -height / 2],
+            [-width / 2, -farther - height], [-width / 2, farther],
+            [farther * .72, -farther * .72 - height], [-farther * .72 - width, -farther * .72 - height],
+            [farther * .72, farther * .72], [-farther * .72 - width, farther * .72]
+          );
+        }
+        let box = null;
+        for (const [dx, dy] of attempts) {
+          const candidate = { x: screenX + dx, y: screenY + dy, w: width, h: height };
+          const inside = candidate.x >= renderMetrics.offsetX + 3
+            && candidate.x + candidate.w <= contentRight - 3
+            && candidate.y >= renderMetrics.offsetY + 3
+            && candidate.y + candidate.h <= contentBottom - 3;
+          const overlaps = placed.some((other) => !(candidate.x + candidate.w + 4 < other.x
+            || other.x + other.w + 4 < candidate.x
+            || candidate.y + candidate.h + 3 < other.y
+            || other.y + other.h + 3 < candidate.y));
+          const coversMarker = markerObstacles.some((other) => other.index !== entry.index
+            && !(candidate.x + candidate.w + 2 < other.x
+              || other.x + other.w + 2 < candidate.x
+              || candidate.y + candidate.h + 2 < other.y
+              || other.y + other.h + 2 < candidate.y));
+          if (inside && !overlaps && !coversMarker) {
+            box = candidate;
+            break;
+          }
+        }
+        if (!box && entry.index === selectedIndex) {
+          box = {
+            x: Math.max(renderMetrics.offsetX + 3, Math.min(contentRight - width - 3, screenX + gap)),
+            y: Math.max(renderMetrics.offsetY + 3, Math.min(contentBottom - height - 3, screenY - height / 2)),
+            w: width,
+            h: height
+          };
+        }
+        if (!box) return;
+        placed.push(box);
+        if (!settlementMode) {
+          const anchorX = Math.max(box.x, Math.min(screenX, box.x + box.w));
+          const anchorY = Math.max(box.y, Math.min(screenY, box.y + box.h));
+          if (Math.hypot(anchorX - screenX, anchorY - screenY) > gap + 4) {
+            const [leaderX, leaderY] = toWorld(anchorX, anchorY);
+            layer.appendChild(svg("line", {
+              x1: entry.x,
+              y1: entry.y,
+              x2: leaderX,
+              y2: leaderY,
+              class: "map-center-leader",
+              "vector-effect": "non-scaling-stroke"
+            }));
+          }
+          const marker = svg("circle", {
+            cx: entry.x,
+            cy: entry.y,
+            r: 3.2 * unit,
+            class: "map-center-marker",
+            "stroke-width": 1.25 * unit,
+            "data-city-center": entry.index
+          });
+          layer.appendChild(marker);
+        }
+        const [worldX, worldY] = toWorld(box.x + 3, box.y + font);
+        const text = textNode(layer, worldX, worldY, label, `map-center-label ${isCity ? "city" : "settlement"}${entry.index === selectedIndex ? " selected" : ""}`, "start");
+        text.setAttribute("font-size", font * unit);
+        text.setAttribute("stroke-width", 3.5 * labelScreenScale() * unit);
+        text.setAttribute("paint-order", "stroke");
+        text.setAttribute("data-label-kind", isCity ? "city" : "settlement");
+        text.setAttribute("data-font-px", font.toFixed(2));
+      });
+    };
+
+    const syncMapSelection = () => {
+      if (!mapRuntime) return;
+      mapRuntime.polygonEntries.forEach((entry) => {
+        const selected = selectedMapObject?.kind === "mo" && selectedMapObject.index === entry.index;
+        entry.path.classList.toggle("site-atlas-highlight", selected);
+      });
+      mapRuntime.markerEntries.forEach((entry) => {
+        const selected = selectedMapObject?.kind === "settlement" && selectedMapObject.index === entry.index;
+        entry.group.classList.toggle("site-atlas-highlight", selected);
+        entry.halo.setAttribute("display", selected ? "" : "none");
+        if (selected) entry.group.parentNode.appendChild(entry.group);
+      });
+      scheduleMapLabels(0);
+    };
+
+    let mapFlightFrame = 0;
+    const flyToMapObject = (kind, index) => {
+      if (!mapRuntime) return;
+      let centerX, centerY, nextWidth;
+      if (kind === "settlement") {
+        const entry = mapRuntime.markerEntries[index];
+        if (!entry) return;
+        centerX = entry.x;
+        centerY = entry.y;
+        nextWidth = Math.min(mapViewport[2], MAP_WIDTH / 2.55);
+      } else {
+        const entry = mapRuntime.polygonEntries[index];
+        if (!entry) return;
+        const bounds = entry.path.getBBox();
+        centerX = bounds.x + bounds.width / 2;
+        centerY = bounds.y + bounds.height / 2;
+        nextWidth = Math.min(
+          MAP_WIDTH,
+          Math.max(118, bounds.width * 1.3, bounds.height * MAP_WIDTH / MAP_HEIGHT * 1.3)
+        );
+      }
+      const nextHeight = nextWidth * MAP_HEIGHT / MAP_WIDTH;
+      const target = [centerX - nextWidth / 2, centerY - nextHeight / 2, nextWidth, nextHeight];
+      const start = [...mapViewport];
+      const duration = motionMode === "full" ? 430 : motionMode === "reduced" ? 180 : 0;
+      cancelAnimationFrame(mapFlightFrame);
+      if (!duration) {
+        mapViewport = target;
+        applyMapViewport();
+        return;
+      }
+      const started = performance.now();
+      const step = (now) => {
+        const progress = Math.min(1, (now - started) / duration);
+        const eased = 1 - (1 - progress) ** 3;
+        mapViewport = start.map((value, position) => value + (target[position] - value) * eased);
+        applyMapViewport();
+        if (progress < 1) mapFlightFrame = requestAnimationFrame(step);
+      };
+      mapFlightFrame = requestAnimationFrame(step);
+    };
+
+    const selectMapObject = (kind, index) => {
+      if ((kind === "mo" && state.mapUnit !== "mo") || (kind === "settlement" && state.mapUnit !== "settlement")) return;
+      selectedMapObject = { kind, index };
+      syncMapSelection();
+      renderMapSelectionCard();
+      flyToMapObject(kind, index);
+      const definition = kind === "mo" ? DATA.municipalities[index] : DATA.settlements[index];
+      setStatus(`Объект закреплён: ${definition?.name || "не указан"}`);
+    };
+
+    const mapTooltipHtml = (kind, index) => {
+      if (!mapRuntime || kind !== (state.mapUnit === "mo" ? "mo" : "settlement")) return "";
+      const definition = mapRuntime.defs[index];
+      const value = mapRuntime.values.get(index);
+      if (!definition || !value) return "";
+      const metricValue = value.metricValue;
+      return `<b>${esc(definition.name)}${kind === "settlement" ? ` · ID слоя ${definition.id}` : ""}</b><div class="tip-grid">
+        ${kind === "settlement" ? `<span>Муниципалитет</span><strong>${esc(definition.municipality)}</strong>` : ""}
+        <span>${territoryMetricLabel(state.mapMetric)}</span><strong>${formatTerritoryMetric(state.mapMetric, metricValue)}</strong>
+        ${rateBase(state.mapMetric) ? `<span>Расчёт</span><strong>${rateFormula(value.selected, definition, state.mapMetric)}</strong>` : ""}
+        <span>Население ${DATA.populationYear}</span><strong>${populationValue(definition) ? fmt(populationValue(definition)) : "н/д"}</strong>
+        <span>Всего смертей</span><strong>${fmt(value.total)}</strong>
+        <span>Выбрано</span><strong>${fmt(value.selected)}</strong>
+        <span>Доля класса</span><strong>${pct(value.total ? value.selected / value.total * 100 : 0)}</strong>
+        <span>Структура</span><strong>${esc(topClasses(value))}</strong>
+      </div>`;
+    };
+
+    const renderMapSelectionCard = () => {
+      if (!mapRuntime?.selection) return;
+      const selection = mapRuntime.selection;
+      const expectedKind = state.mapUnit === "mo" ? "mo" : "settlement";
+      if (!selectedMapObject || selectedMapObject.kind !== expectedKind) {
+        selection.hidden = true;
+        selection.innerHTML = "";
+        return;
+      }
+      const html = mapTooltipHtml(selectedMapObject.kind, selectedMapObject.index);
+      if (!html) {
+        selection.hidden = true;
+        return;
+      }
+      selection.hidden = false;
+      selection.innerHTML = `<button type="button" class="site-map-selection-close" aria-label="Закрыть карточку выбранного объекта">×</button><span class="site-map-selection-kicker">Закреплённый объект</span>${html}`;
+      selection.querySelector(".site-map-selection-close").onclick = () => {
+        selectedMapObject = null;
+        syncMapSelection();
+        renderMapSelectionCard();
+      };
+      if (motionDuration() && typeof selection.animate === "function") {
+        selection.animate(
+          [{ opacity: .25, transform: "translateX(8px)" }, { opacity: 1, transform: "translateX(0)" }],
+          { duration: Math.min(motionDuration(), 230), easing: "ease-out" }
+        );
+      }
+    };
+
+    const showMapTooltip = (event, target) => {
+      const key = `${target.dataset.mapKind}:${target.dataset.index}`;
+      if (key === mapTooltipKey) return;
+      const html = mapTooltipHtml(target.dataset.mapKind, +target.dataset.index);
+      if (!html) return;
+      mapTooltipKey = key;
+      showTip(event, html);
+    };
+
+    const updateOptimizedMap = (context) => {
+      const started = performance.now();
+      if (!mapRuntime || !mapRuntime.root.isConnected) createMapRuntime();
+      const { defs, map } = geoValues(state.mapUnit, state.mapClass);
+      const totalRows = filtered().length;
+      const values = [...map.values()];
+      values.forEach((value) => {
+        value.metricValue = territoryMetric(state.mapMetric, value, defs[value.idx], state.mapClass, totalRows);
+      });
+      mapRuntime.defs = defs;
+      mapRuntime.values = map;
+      mapRuntime.unit = state.mapUnit;
+      mapRuntime.context = context;
+      const colors = paletteClassColors();
+      const colorFor = (value) => Number.isFinite(value?.metricValue)
+        ? colors[mapClassIndex(value.metricValue, context.boundaries)]
+        : "#98a2b3";
+      mapRuntime.polygonEntries.forEach((entry) => {
+        const value = map.get(entry.index);
+        const active = state.mapUnit === "mo" && Boolean(value);
+        entry.path.style.pointerEvents = state.mapUnit === "mo" ? "" : "none";
+        entry.path.setAttribute("fill", state.mapUnit === "mo" ? (active ? colorFor(value) : "#e5e7eb") : "#e8eff5");
+        entry.path.setAttribute("tabindex", active ? "0" : "-1");
+        if (active) {
+          entry.path.setAttribute("role", "button");
+          entry.path.setAttribute("aria-label", `${entry.definition.name}: ${formatTerritoryMetric(state.mapMetric, value.metricValue)}`);
+        } else {
+          entry.path.removeAttribute("role");
+          entry.path.removeAttribute("aria-label");
+        }
+        entry.path.classList.toggle("site-map-suppressed", active && suppressSmallValues && value.selected < 5);
+      });
+      mapRuntime.markerEntries.forEach((entry) => {
+        const value = map.get(entry.index);
+        const active = state.mapUnit === "settlement" && Boolean(value);
+        entry.group.style.display = active ? "" : "none";
+        entry.group.setAttribute("tabindex", active ? "0" : "-1");
+        if (!active) return;
+        const color = colorFor(value);
+        if (entry.visual.ring) entry.main.setAttribute("stroke", color);
+        else entry.main.setAttribute("fill", color);
+        entry.group.setAttribute("aria-label", `${entry.definition.name}: ${formatTerritoryMetric(state.mapMetric, value.metricValue)}, население ${populationValue(entry.definition) ? fmt(populationValue(entry.definition)) : "не указано"}`);
+        entry.group.classList.toggle("site-map-suppressed", suppressSmallValues && value.selected < 5);
+      });
+      const ranked = values
+        .filter((value) => Number.isFinite(value.metricValue))
+        .sort((left, right) => right.metricValue - left.metricValue)
+        .slice(0, 15);
+      mapRuntime.rank.innerHTML = ranked.map((value, index) =>
+        `<div class="rank-item${suppressSmallValues && value.selected < 5 ? " site-map-suppressed" : ""}"><span>${index + 1}. ${esc(defs[value.idx].name)}</span><b>${formatTerritoryMetric(state.mapMetric, value.metricValue)}</b></div>`
+      ).join("");
+      const unitLabel = state.mapMetric === "share" ? "%" : rateBase(state.mapMetric) ? "" : "смертей";
+      const rateNote = rateBase(state.mapMetric)
+        ? `<div class="site-map-legend-note">Среднегодовой расчёт: смерти / население ${DATA.populationYear} / ${rateYearsLabel()}. Серый цвет — нет положительного знаменателя.${state.sex !== "all" || state.age !== "all" ? "<br><strong>Знаменатель — общая численность населения.</strong>" : ""}</div>`
+        : "";
+      mapRuntime.legend.innerHTML = `<b>Проекция · EPSG:3857</b>
+        <b>Цвет · ${territoryMetricLabel(state.mapMetric)}</b>
+        <div class="legend-ramp"></div>
+        <div class="legend-range"><span>0 ${unitLabel}</span><span>${formatTerritoryMetric(state.mapMetric, context.scaleMaximum)}</span></div>
+        ${rateNote}
+        ${state.mapUnit === "settlement" ? populationLegendHtml() : ""}
+        ${state.mapUnit === "settlement" ? settlementLabelLegendHtml() : ""}
+        ${state.mapUnit === "mo" ? municipalityLabelLegendHtml() : ""}
+        ${suppressSmallValues ? '<div class="site-map-legend-note">Малые значения n &lt; 5 скрыты</div>' : ""}
+        <div class="legend-range"><span>${context.manualScale ? "шкала задана вручную" : "автомасштаб по фильтру · Дженкс"}</span><span>Web Mercator</span></div>`;
+      syncMapSymbolSizes();
+      syncMapSelection();
+      renderMapSelectionCard();
+      applyMapViewport();
+      requestAnimationFrame(syncMapPanelHeight);
+      mapRuntime.lastUpdateMs = performance.now() - started;
+      if (debugMap) {
+        let debug = mapRuntime.side.querySelector(".site-map-debug");
+        if (!debug) {
+          debug = document.createElement("div");
+          debug.className = "site-map-debug";
+          mapRuntime.side.appendChild(debug);
+        }
+        debug.textContent = `filter ${mapPerformance.filterMiss ? DF.format(mapPerformance.filterMs) + " мс" : "cache"} · aggregate ${mapPerformance.aggregateMiss ? DF.format(mapPerformance.aggregateMs) + " мс" : "cache"} · paint ${DF.format(mapRuntime.lastUpdateMs)} мс · ${values.length} объектов`;
+      }
+    };
+
+    const renderOptimizedMapView = () => {
+      mapPerformance.filterMiss = false;
+      mapPerformance.aggregateMiss = false;
+      localControls();
+      renderKpis();
+      els.title.textContent = VIEWS.map[0];
+      els.subtitle.textContent = VIEWS.map[1];
+      els.method.textContent = state.mapUnit === "settlement"
+        ? "Размер знака НП определяется населением переписи 2021 года и не меняется при фильтрации. Цвет показывает выбранный показатель по пяти классам Дженкса. Города подписаны полужирным шрифтом 15 px, остальные НП — обычным шрифтом 10–11 px. Колесо масштабирует карту, перетаскивание изменяет охват."
+        : "Муниципальные полигоны окрашены по выбранному показателю и пяти классам Дженкса. Поверх районов сохраняются опорные точки и подписи ключевых городов размером 15 px; переключатель подписей позволяет их скрыть. Колесо масштабирует карту, перетаскивание изменяет охват.";
+      els.meta.innerHTML = `<span class="chip">${state.year === "all" ? (DATA.years.length > 1 ? `${DATA.years[0]}–${DATA.years[DATA.years.length - 1]}` : DATA.years[0]) : state.year}</span><span class="chip">${state.sex === "all" ? "оба пола" : state.sex === "1" ? "мужчины" : "женщины"}</span><span class="chip">${document.querySelector(`#ageSelect option[value="${state.age}"]`)?.textContent || "все возрасты"}</span><span class="chip">EPSG:3857 · Web Mercator</span>`;
+      const context = syncActiveMapBreaks();
+      updateOptimizedMap(context);
+    };
+
+    const highlightSearchTarget = () => {
+      document.querySelectorAll(".site-atlas-highlight").forEach((element) => element.classList.remove("site-atlas-highlight"));
+      if (!searchTarget) return;
+      let target = null;
+      if (searchTarget.type === "code") {
+        target = [...document.querySelectorAll(".tile")].find((tile) => tile.querySelector(".tile-code")?.textContent.trim() === searchTarget.code);
+      } else if (searchTarget.type === "class") {
+        target = [...document.querySelectorAll(".tile")].find((tile) => tile.querySelector(".tile-code")?.textContent.trim() === DATA.classes[searchTarget.index].roman);
+      } else if (searchTarget.type === "block") {
+        target = [...document.querySelectorAll(".tile")].find((tile) => tile.querySelector(".tile-code")?.textContent.trim() === DATA.blocks[searchTarget.index].code);
+      } else if (searchTarget.type === "municipality" && state.view === "map") {
+        target = document.querySelector(`#viz [data-map-kind="mo"][data-index="${searchTarget.index}"]`);
+      } else if (searchTarget.type === "settlement" && state.view === "map") {
+        target = document.querySelector(`#viz [data-map-kind="settlement"][data-index="${searchTarget.index}"]`);
+      }
+      if (target) {
+        target.classList.add("site-atlas-highlight");
+        target.scrollIntoView({ block: "center", inline: "center" });
+      }
+    };
+
+    const motionControl = document.createElement("section");
+    motionControl.className = "atlas-motion-control";
+    motionControl.setAttribute("aria-label", "Интенсивность анимации интерфейса");
+    motionControl.innerHTML = `
+      <div class="atlas-motion-control__head">
+        <span>Движение интерфейса</span>
+        <small>плавность / скорость</small>
+      </div>
+      <div class="atlas-motion-control__buttons" role="group" aria-label="Режим анимации">
+        <button type="button" data-motion-mode="full">Полное</button>
+        <button type="button" data-motion-mode="reduced">Мягкое</button>
+        <button type="button" data-motion-mode="off">Выкл.</button>
+      </div>`;
+    const drawerNote = atlasDrawer?.querySelector(".drawer-scroll > .note");
+    if (drawerNote) drawerNote.insertAdjacentElement("beforebegin", motionControl);
+    else atlasDrawer?.querySelector(".drawer-scroll")?.appendChild(motionControl);
+    motionControl.querySelectorAll("[data-motion-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        applyMotionMode(button.dataset.motionMode);
+        if (button.dataset.motionMode === "off") render();
+      });
+    });
+    applyMotionMode(motionMode, false);
+
+    const actionBox = document.createElement("div");
+    actionBox.innerHTML = `
+      <div class="atlas-actions" aria-label="Действия с текущим срезом">
+        <button type="button" data-atlas-action="share">Скопировать ссылку</button>
+        <button type="button" data-atlas-action="svg">Скачать SVG</button>
+        <button type="button" data-atlas-action="csv">Скачать сводку CSV</button>
+      </div>
+      <p class="atlas-action-status" role="status" aria-live="polite"></p>`;
+    document.querySelector(".chart-head")?.appendChild(actionBox);
+
+    const status = actionBox.querySelector(".atlas-action-status");
+    const setStatus = (message) => {
+      status.textContent = message;
+      window.clearTimeout(setStatus.timer);
+      setStatus.timer = window.setTimeout(() => { status.textContent = ""; }, 3200);
+    };
+
+    const downloadBlob = (content, type, filename) => {
+      const url = URL.createObjectURL(new Blob([content], { type }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    };
+
+    const exportSvg = () => {
+      const source = document.querySelector("#viz svg");
+      if (!source) return;
+      const clone = source.cloneNode(true);
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+      style.textContent = ".axis{stroke:#aeb9ca}.gridline{stroke:#e5eaf2}.axis-label{fill:#68758a;font:11px Arial}.row-label{fill:#344054;font:11px Arial}";
+      clone.prepend(style);
+      downloadBlob(new XMLSerializer().serializeToString(clone), "image/svg+xml;charset=utf-8", `${exportPrefix}-${state.view}.svg`);
+      setStatus("SVG текущего графика подготовлен.");
+    };
+
+    const exportClassCsv = () => {
+      const rows = filtered();
+      const grouped = DATA.classes.map((definition, index) => {
+        const selected = rows.filter((row) => classOf(row) === index);
+        const summary = stats(selected);
+        return [definition.roman, definition.short, summary.n, rows.length ? summary.n / rows.length * 100 : 0, summary.median, summary.pgpzh];
+      }).filter((row) => row[2] > 0);
+      const header = ["Класс", "Название", "Смертей", "Доля выборки, %", "Медианный возраст", "ПГПЖ-75"];
+      const quote = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+      const csv = "\uFEFF" + [header, ...grouped].map((row) => row.map(quote).join(";")).join("\r\n");
+      downloadBlob(csv, "text/csv;charset=utf-8", `${exportPrefix}-current-filter-class-summary.csv`);
+      setStatus("Агрегированная сводка по классам подготовлена; перечень НП в неё не включён.");
+    };
+
+    actionBox.querySelector('[data-atlas-action="share"]').addEventListener("click", async () => {
+      writeUrlState();
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        setStatus("Ссылка на текущий срез скопирована.");
+      } catch {
+        const field = document.createElement("textarea");
+        field.value = window.location.href;
+        document.body.appendChild(field);
+        field.select();
+        document.execCommand("copy");
+        field.remove();
+        setStatus("Ссылка на текущий срез скопирована.");
+      }
+    });
+    actionBox.querySelector('[data-atlas-action="svg"]').addEventListener("click", exportSvg);
+    actionBox.querySelector('[data-atlas-action="csv"]').addEventListener("click", exportClassCsv);
+
+    const searchItems = [];
+    DATA.classes.forEach((item, index) => searchItems.push({ type: "class", index, label: `Класс ${item.roman} — ${item.short}` }));
+    DATA.blocks.forEach((item, index) => searchItems.push({ type: "block", index, label: `Блок ${item.code} — ${item.label}` }));
+    DATA.codes.forEach((item, index) => searchItems.push({ type: "code", index, code: item.code, block: item.block, label: `Код ${item.code} — ${item.label}` }));
+    DATA.municipalities.forEach((item, index) => searchItems.push({ type: "municipality", index, label: `МО — ${item.name}` }));
+    DATA.settlements.forEach((item, index) => searchItems.push({ type: "settlement", index, label: `НП — ${item.name} · ${item.municipality}` }));
+    const searchMap = new Map(searchItems.map((item) => [item.label.toLocaleLowerCase("ru-RU"), item]));
+
+    const searchBox = document.createElement("div");
+    searchBox.className = "atlas-search";
+    searchBox.innerHTML = `
+      <label for="atlasSearchInput">Поиск по МКБ и территории</label>
+      <div class="atlas-search__row"><input id="atlasSearchInput" list="atlasSearchOptions" placeholder="Например: I21, Благовещенск"><button type="button">Найти</button></div>
+      <datalist id="atlasSearchOptions"></datalist>
+      <p class="atlas-search__hint">Класс, блок, трёхзначный код, муниципалитет или НП</p>`;
+    document.querySelector(".filters")?.insertAdjacentElement("beforebegin", searchBox);
+    const datalist = searchBox.querySelector("datalist");
+    searchItems.forEach((item) => datalist.insertAdjacentHTML("beforeend", `<option value="${item.label.replace(/"/g, "&quot;")}"></option>`));
+
+    const activateSearch = () => {
+      const input = searchBox.querySelector("input");
+      const query = input.value.trim().toLocaleLowerCase("ru-RU");
+      const found = searchMap.get(query) || searchItems.find((item) => item.label.toLocaleLowerCase("ru-RU").includes(query));
+      if (!found || !query) {
+        setStatus("Совпадение не найдено. Уточните код или название.");
+        return;
+      }
+      input.value = found.label;
+      searchTarget = found;
+      if (found.type === "class") {
+        state.view = "treemap";
+        state.treeType = "class";
+        state.treeIndex = found.index;
+      } else if (found.type === "block") {
+        state.view = "treemap";
+        state.treeType = "block";
+        state.treeIndex = found.index;
+      } else if (found.type === "code") {
+        state.view = "treemap";
+        state.treeType = "block";
+        state.treeIndex = found.block;
+      } else {
+        state.view = "map";
+        state.mapUnit = found.type === "municipality" ? "mo" : "settlement";
+        mapViewport = [0, 0, 760, 790];
+      }
+      render();
+      setStatus(`Показано: ${found.label}`);
+    };
+    searchBox.querySelector("button").addEventListener("click", activateSearch);
+    searchBox.querySelector("input").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") activateSearch();
+    });
+
+    const motionSelectors = {
+      treemap: ".tile",
+      heatmap: ".heat-cell",
+      arrow: "svg line:not(.gridline):not(.axis), svg circle",
+      pyramid: "svg rect",
+      plot: "svg line:not(.gridline):not(.axis), svg circle",
+      dotogram: "svg circle, svg line:not(.gridline):not(.axis)"
+    };
+    const changeNotice = document.createElement("div");
+    changeNotice.className = "atlas-change-notice";
+    changeNotice.setAttribute("role", "status");
+    changeNotice.setAttribute("aria-live", "polite");
+    document.querySelector(".atlas-main .chart-meta")?.insertAdjacentElement("beforebegin", changeNotice);
+    let renderedFilters = { year: state.year, sex: state.sex, age: state.age };
+    const filterDisplayValue = (key, value) => {
+      if (key === "year") return value === "all"
+        ? (DATA.years.length > 1 ? `${DATA.years[0]}–${DATA.years[DATA.years.length - 1]}` : String(DATA.years[0]))
+        : String(value);
+      if (key === "sex") return value === "all" ? "оба пола" : value === "1" ? "мужчины" : "женщины";
+      return document.querySelector(`#ageSelect option[value="${value}"]`)?.textContent || "все возрасты";
+    };
+    const announceFilterChanges = () => {
+      const labels = { year: "Период", sex: "Пол", age: "Возраст" };
+      const selectors = { year: "#yearSelect", sex: "#sexSeg", age: "#ageSelect" };
+      const changes = Object.keys(labels).filter((key) => renderedFilters[key] !== state[key]);
+      if (!changes.length) return;
+      changeNotice.textContent = changes.map((key) =>
+        `${labels[key]}: ${filterDisplayValue(key, renderedFilters[key])} → ${filterDisplayValue(key, state[key])}`
+      ).join(" · ");
+      changeNotice.classList.remove("is-visible");
+      void changeNotice.offsetWidth;
+      changeNotice.classList.add("is-visible");
+      changes.forEach((key) => {
+        const control = document.querySelector(selectors[key]);
+        control?.classList.remove("site-filter-changed");
+        void control?.offsetWidth;
+        control?.classList.add("site-filter-changed");
+        window.setTimeout(() => control?.classList.remove("site-filter-changed"), 720);
+      });
+      window.clearTimeout(changeNotice.hideTimer);
+      changeNotice.hideTimer = window.setTimeout(() => changeNotice.classList.remove("is-visible"), 2300);
+      renderedFilters = { year: state.year, sex: state.sex, age: state.age };
+    };
+    const motionKey = (element, index, view) => {
+      if (view === "treemap") return `tile:${element.querySelector(".tile-code")?.textContent.trim() || index}`;
+      return `${view}:${element.tagName.toLowerCase()}:${index}`;
+    };
+    const motionNodes = (view) => {
+      const selector = motionSelectors[view];
+      return selector ? [...els.viz.querySelectorAll(selector)] : [];
+    };
+    const captureMotionSnapshot = (view) => {
+      if (motionDuration() === 0 || view === "map") return null;
+      const nodes = motionNodes(view);
+      if (!nodes.length || nodes.length > 240) return { bulk: true };
+      const boxes = new Map();
+      nodes.forEach((element, index) => {
+        const box = element.getBoundingClientRect();
+        if (box.width > 0 && box.height > 0) boxes.set(motionKey(element, index, view), box);
+      });
+      return { boxes };
+    };
+    const animateVizEntrance = (changedView = false) => {
+      const duration = motionDuration();
+      if (!duration || typeof els.viz.animate !== "function") return;
+      els.viz.animate(
+        [
+          { opacity: changedView ? .42 : .68, transform: changedView ? "translateY(7px) scale(.992)" : "translateY(3px)" },
+          { opacity: 1, transform: "translateY(0) scale(1)" }
+        ],
+        { duration, easing: "cubic-bezier(.2,.75,.25,1)" }
+      );
+    };
+    const animateMotionSnapshot = (snapshot, view) => {
+      const duration = motionDuration();
+      if (!duration || !snapshot) return;
+      if (snapshot.bulk) {
+        animateVizEntrance(false);
+        return;
+      }
+      const nodes = motionNodes(view);
+      const changed = [];
+      nodes.forEach((element, index) => {
+        if (typeof element.animate !== "function") return;
+        const current = element.getBoundingClientRect();
+        const previous = snapshot.boxes.get(motionKey(element, index, view));
+        if (!previous || !current.width || !current.height) {
+          element.animate(
+            [{ opacity: .2, transform: "scale(.96)" }, { opacity: 1, transform: "scale(1)" }],
+            { duration: Math.min(duration, 190), easing: "ease-out" }
+          );
+          return;
+        }
+        const deltaX = previous.left - current.left;
+        const deltaY = previous.top - current.top;
+        const scaleX = Math.max(.35, Math.min(2.5, previous.width / current.width));
+        const scaleY = Math.max(.35, Math.min(2.5, previous.height / current.height));
+        if (Math.abs(deltaX) < .5 && Math.abs(deltaY) < .5 && Math.abs(scaleX - 1) < .01 && Math.abs(scaleY - 1) < .01) return;
+        const changeScore = Math.abs(deltaX) / Math.max(current.width, 18)
+          + Math.abs(deltaY) / Math.max(current.height, 18)
+          + Math.abs(1 - scaleX)
+          + Math.abs(1 - scaleY);
+        if (changeScore > .12) changed.push({ element, score: changeScore });
+        element.animate(
+          [
+            { transform: `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`, opacity: .72 },
+            { transform: "translate(0, 0) scale(1, 1)", opacity: 1 }
+          ],
+          { duration, easing: "cubic-bezier(.2,.78,.25,1)" }
+        );
+      });
+      changed.sort((left, right) => right.score - left.score).slice(0, 3).forEach(({ element }) => {
+        element.classList.add("site-data-changed");
+        window.setTimeout(() => element.classList.remove("site-data-changed"), 1250);
+      });
+    };
+    const kpiFrames = new WeakMap();
+    const numericTextToken = (text) => String(text || "").match(/-?\d[\d\s\u00a0]*(?:[.,]\d+)?/);
+    const pulseChangedKpis = (before) => {
+      const duration = motionDuration();
+      document.querySelectorAll(".atlas-main .kpi b").forEach((element, index) => {
+        const nextText = element.textContent;
+        const priorTarget = element.dataset.atlasKpiTarget;
+        element.dataset.atlasKpiTarget = nextText;
+        const priorFrame = kpiFrames.get(element);
+        if (priorFrame) {
+          cancelAnimationFrame(priorFrame);
+          kpiFrames.delete(element);
+        }
+        if (!duration) {
+          element.textContent = nextText;
+          return;
+        }
+        if (nextText === before[index] || priorTarget === nextText) {
+          element.textContent = nextText;
+          return;
+        }
+        const fromToken = numericTextToken(before[index]);
+        const toToken = numericTextToken(nextText);
+        if (fromToken && toToken) {
+          const fromValue = Number(fromToken[0].replace(/[\s\u00a0]/g, "").replace(",", "."));
+          const toValue = Number(toToken[0].replace(/[\s\u00a0]/g, "").replace(",", "."));
+          const decimals = (toToken[0].split(/[.,]/)[1] || "").length;
+          if (Number.isFinite(fromValue) && Number.isFinite(toValue)) {
+            const formatter = new Intl.NumberFormat("ru-RU", {
+              minimumFractionDigits: decimals,
+              maximumFractionDigits: decimals
+            });
+            const started = performance.now();
+            const frame = (now) => {
+              const progress = Math.min(1, (now - started) / Math.max(180, duration * 1.45));
+              const eased = 1 - (1 - progress) ** 3;
+              const current = fromValue + (toValue - fromValue) * eased;
+              element.textContent = nextText.replace(toToken[0], formatter.format(current));
+              if (progress < 1) kpiFrames.set(element, requestAnimationFrame(frame));
+              else {
+                kpiFrames.delete(element);
+                element.textContent = nextText;
+              }
+            };
+            element.textContent = before[index];
+            kpiFrames.set(element, requestAnimationFrame(frame));
+          }
+        }
+        if (typeof element.animate === "function") {
+          element.animate(
+            [{ opacity: .48, transform: "translateY(3px)" }, { opacity: 1, transform: "translateY(0)" }],
+            { duration: Math.min(duration, 190), easing: "ease-out" }
+          );
+        }
+      });
+    };
+
+    const baseRender = render;
+    let renderedView = state.view;
+    render = () => {
+      const previousView = renderedView;
+      const nextView = state.view;
+      const snapshot = previousView === nextView ? captureMotionSnapshot(previousView) : null;
+      const previousKpis = [...document.querySelectorAll(".atlas-main .kpi b")].map((element) => element.textContent);
+      announceFilterChanges();
+      els.viz.classList.add("is-updating");
+      const changedView = previousView !== nextView;
+      /*
+       * Full-card browser snapshots are slower than a direct WAAPI transition for
+       * the current self-contained atlases (32k–64k embedded records). Keep the
+       * native path only for future lightweight datasets.
+       */
+      const nativeViewTransition = changedView
+        && motionMode === "full"
+        && DATA.records.length < 10000
+        && typeof document.startViewTransition === "function";
+      const updateDom = () => {
+        els.viz.dataset.view = state.view;
+        if (state.view === "map") renderOptimizedMapView();
+        else baseRender();
+        if (drawerTitle) drawerTitle.textContent = VIEWS[state.view]?.[0] || "Параметры";
+        syncGlobalControls();
+        writeUrlState();
+        addSupplementalControls();
+        enhanceTreemap();
+        enhanceHeatmapContrast();
+        enhanceDotogram();
+        enhanceMapPaletteLegend();
+        const svgButton = actionBox.querySelector('[data-atlas-action="svg"]');
+        svgButton.disabled = !document.querySelector("#viz svg");
+        svgButton.title = svgButton.disabled ? "Для этой визуализации SVG недоступен" : "Скачать текущий график в SVG";
+        renderedView = nextView;
+        requestAnimationFrame(() => {
+          els.viz.classList.remove("is-updating");
+          if (changedView && !nativeViewTransition) animateVizEntrance(true);
+          else if (!changedView) animateMotionSnapshot(snapshot, nextView);
+          pulseChangedKpis(previousKpis);
+          highlightSearchTarget();
+        });
+      };
+      if (nativeViewTransition) {
+        document.querySelector(".atlas-main .card")?.style.setProperty("view-transition-name", "atlas-visual");
+        document.startViewTransition(updateDom);
+      } else {
+        updateDom();
+      }
+    };
+
+    document.querySelectorAll(".viz-btn").forEach((button) => {
+      button.onclick = () => {
+        state.view = button.dataset.view;
+        render();
+      };
+    });
+    const yearSelect = document.getElementById("yearSelect");
+    if (yearSelect) yearSelect.onchange = () => {
+      state.year = yearSelect.value;
+      render();
+    };
+    const ageSelect = document.getElementById("ageSelect");
+    if (ageSelect) ageSelect.onchange = () => {
+      state.age = ageSelect.value;
+      render();
+    };
+    document.querySelectorAll("#sexSeg button").forEach((button) => {
+      button.onclick = () => {
+        state.sex = button.dataset.value;
+        render();
+      };
+    });
+
+    window.addEventListener("popstate", () => {
+      restoringHistory = true;
+      Object.assign(state, defaults);
+      readUrlState();
+      render();
+      restoringHistory = false;
+    });
+
+    readUrlState();
+    render();
+  };
+
+  enhanceAtlas();
+})();

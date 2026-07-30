@@ -1,0 +1,67 @@
+{
+  "source": "Амурская обл_30.04 (6).xlsx",
+  "layer_source": "НП_ из_слоя.xlsx",
+  "municipality_geometry_source": "Амурская область_МО.gpkg",
+  "coordinate_reference": "settlements.csv",
+  "map_crs": "EPSG:3857",
+  "municipality_geometry": "official_municipal_boundaries_simplified_500m",
+  "period": "2023–2025",
+  "source_rows": 32971,
+  "period_rows": 32942,
+  "excluded_outside_period": 29,
+  "mapped_icd": 32837,
+  "mapped_icd_share": 0.9968125796855078,
+  "valid_age": 32937,
+  "municipality_mapped": 31653,
+  "municipality_icd_mapped": 31577,
+  "settlement_coordinate_mapped": 29830,
+  "settlement_coordinate_share": 0.9055309331552426,
+  "municipalities": 29,
+  "municipality_display_types": {
+    "city": 8,
+    "district": 20,
+    "urban_settlement": 1
+  },
+  "municipality_label_convention": "city (г.), district (р-н), urban-type settlement (пгт)",
+  "settlements_in_layer": 632,
+  "settlements_with_data": 506,
+  "settlements_inside_assigned_municipality": 629,
+  "settlement_polygon_match_share": 0.995253164556962,
+  "settlement_polygon_mismatches": [
+    {
+      "settlement_id": 25404,
+      "settlement": "Кивда",
+      "assigned_municipality": "Райчихинск",
+      "containing_municipality": "Рабочий посёлок Прогресс"
+    },
+    {
+      "settlement_id": 67316,
+      "settlement": "Верхнеблаговещенское",
+      "assigned_municipality": "Благовещенск",
+      "containing_municipality": "Благовещенский"
+    },
+    {
+      "settlement_id": 93405,
+      "settlement": "Нижняя Завитинка",
+      "assigned_municipality": "Михайловский",
+      "containing_municipality": "Октябрьский"
+    }
+  ],
+  "unknown_layer_ids": 0,
+  "classes": 22,
+  "blocks": 134,
+  "codes": 578,
+  "population_source": "Амурская.xlsx",
+  "population_year": 2021,
+  "population_region_total": 764218,
+  "population_settlements_linked": 632,
+  "population_settlements_positive": 573,
+  "population_settlements_missing": 59,
+  "population_municipalities_linked": 29,
+  "population_municipality_method": "sum of settlement populations by municipality",
+  "population_settlement_death_records_eligible": 29805,
+  "population_settlement_death_records_without_positive_denominator": 25,
+  "population_rate_formula": "filtered deaths / (population_2021 * selected calendar years) * 1,000, 10,000 or 100,000; annual average for multi-year filters",
+  "generated_at": "2026-07-27T18:33:24",
+  "privacy": "Only anonymized analytical dimensions are embedded; death record IDs, addresses and names are excluded."
+}
