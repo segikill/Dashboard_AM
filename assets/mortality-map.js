@@ -52,6 +52,9 @@
   const SETTLEMENT_LAYER_IDS = SETTLEMENT_SYMBOL_CLASSES.map(
     (item) => `${PREFIX}settlement-${item.code}`
   );
+  const DONUT_OUTLINE_LAYER_IDS = DONUT_CLASSES.map(
+    (item) => `${PREFIX}settlement-${item.code}-outline`
+  );
 
   let map = null;
   let root = null;
@@ -151,6 +154,18 @@
     9, symbolClass.ring * .94,
     12, symbolClass.ring * 1.04
   ];
+
+  const donutOuterRadiusExpression = (symbolClass) => {
+    const base = symbolClass.diameter * .5;
+    return [
+      "interpolate", ["linear"], ["zoom"],
+      4, base * .66 + symbolClass.ring * .66,
+      6, base * .76 + symbolClass.ring * .78,
+      8, base * .9 + symbolClass.ring * .9,
+      10, base + symbolClass.ring * .97,
+      12, base * 1.08 + symbolClass.ring * 1.04
+    ];
+  };
 
   const metricColorExpression = (model) => {
     const colors = model?.colors?.length === 5
@@ -429,6 +444,21 @@
         filter: ["==", ["get", "population_class"], symbolClass.code],
         paint
       });
+      if (symbolClass.donut) {
+        map.addLayer({
+          id: `${PREFIX}settlement-${symbolClass.code}-outline`,
+          type: "circle",
+          source: `${PREFIX}settlements`,
+          filter: ["==", ["get", "population_class"], symbolClass.code],
+          paint: {
+            "circle-radius": donutOuterRadiusExpression(symbolClass),
+            "circle-color": "rgba(0,0,0,0)",
+            "circle-stroke-color": "#324b62",
+            "circle-stroke-opacity": featureOpacityExpression(.82, .2),
+            "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 4, .75, 9, 1.05, 12, 1.25]
+          }
+        });
+      }
     });
     map.addLayer({
       id: `${PREFIX}settlement-missing`,
@@ -578,6 +608,7 @@
     setVisibility(`${PREFIX}municipality-theme`, !settlements);
     setVisibility(`${PREFIX}municipality-selected`, !settlements);
     SETTLEMENT_LAYER_IDS.forEach((layerId) => setVisibility(layerId, settlements));
+    DONUT_OUTLINE_LAYER_IDS.forEach((layerId) => setVisibility(layerId, settlements));
     setVisibility(`${PREFIX}settlement-missing`, settlements);
     setVisibility(`${PREFIX}settlement-selected`, settlements);
     const labelsEnabled = currentModel.labels !== "off";
