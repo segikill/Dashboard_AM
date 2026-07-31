@@ -55,6 +55,9 @@
   const DONUT_OUTLINE_LAYER_IDS = DONUT_CLASSES.map(
     (item) => `${PREFIX}settlement-${item.code}-outline`
   );
+  const DONUT_INNER_OUTLINE_LAYER_IDS = DONUT_CLASSES.map(
+    (item) => `${PREFIX}settlement-${item.code}-inner-outline`
+  );
 
   let map = null;
   let root = null;
@@ -446,6 +449,19 @@
       });
       if (symbolClass.donut) {
         map.addLayer({
+          id: `${PREFIX}settlement-${symbolClass.code}-inner-outline`,
+          type: "circle",
+          source: `${PREFIX}settlements`,
+          filter: ["==", ["get", "population_class"], symbolClass.code],
+          paint: {
+            "circle-radius": radiusExpression(symbolClass),
+            "circle-color": "rgba(0,0,0,0)",
+            "circle-stroke-color": "#324b62",
+            "circle-stroke-opacity": featureOpacityExpression(.82, .2),
+            "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 4, .7, 9, 1, 12, 1.2]
+          }
+        });
+        map.addLayer({
           id: `${PREFIX}settlement-${symbolClass.code}-outline`,
           type: "circle",
           source: `${PREFIX}settlements`,
@@ -609,6 +625,7 @@
     setVisibility(`${PREFIX}municipality-selected`, !settlements);
     SETTLEMENT_LAYER_IDS.forEach((layerId) => setVisibility(layerId, settlements));
     DONUT_OUTLINE_LAYER_IDS.forEach((layerId) => setVisibility(layerId, settlements));
+    DONUT_INNER_OUTLINE_LAYER_IDS.forEach((layerId) => setVisibility(layerId, settlements));
     setVisibility(`${PREFIX}settlement-missing`, settlements);
     setVisibility(`${PREFIX}settlement-selected`, settlements);
     const labelsEnabled = currentModel.labels !== "off";
