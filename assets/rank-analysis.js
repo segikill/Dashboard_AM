@@ -1,0 +1,489 @@
+(() => {
+  "use strict";
+
+  if (typeof state === "undefined" || typeof DATA === "undefined" || typeof renderArrow !== "function") return;
+
+  if (state.rankView === undefined) state.rankView = "compare";
+  if (state.rankCompare === undefined) state.rankCompare = state.arrowMode === "sex" ? "sex" : "time";
+  if (state.rankLevel === undefined) state.rankLevel = "class";
+  if (state.rankClass === undefined) state.rankClass = "all";
+  if (state.rankMetric === undefined) state.rankMetric = "n";
+  if (state.rankTop === undefined) state.rankTop = "15";
+  if (state.rankOnlyChanges === undefined) state.rankOnlyChanges = "0";
+
+  VIEWS.arrow = [
+    "Анализ рангов причин смерти",
+    "Два среза показывают изменение позиции и реального значения; режим по годам — траекторию ранга в 2023–2025 годах."
+  ];
+  METHOD.arrow = "Ранг рассчитывается отдельно внутри каждого среза по выбранному показателю. Подъём к первому месту обозначен коралловым, снижение — синим, неизменная позиция — серым. Абсолютное и относительное изменение приведены в правой аналитической панели.";
+
+  const baseLocalControls = localControls;
+  let selectedKey = "";
+  let selectedPayload = null;
+
+  const number = (value, digits = 0) => new Intl.NumberFormat("ru-RU", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits
+  }).format(Number(value) || 0);
+
+  const signed = (value, suffix = "") => {
+    if (value == null || !Number.isFinite(value)) return "н/д";
+    const sign = value > 0 ? "+" : value < 0 ? "−" : "";
+    return `${sign}${number(Math.abs(value), 1)}${suffix}`;
+  };
+
+  const shortLabel = (value, maximum = 36) => {
+    const text = String(value || "");
+    return text.length > maximum ? `${text.slice(0, maximum - 1)}…` : text;
+  };
+
+  const metricLabel = () => ({
+    n: "количество смертей",
+    share: "доля внутри среза",
+    pgpzh: "ПГПЖ-75"
+  })[state.rankMetric] || "значение";
+
+  const metricUnit = () => state.rankMetric === "share" ? "%" : state.rankMetric === "pgpzh" ? " лет" : "";
+
+  const formatMetric = (value) => state.rankMetric === "share"
+    ? `${number(value, 1)}%`
+    : state.rankMetric === "pgpzh"
+      ? number(value, 0)
+      : number(value, 0);
+
+  const causeDefinitions = () => {
+    if (state.rankLevel === "block") {
+      return DATA.blocks
+        .map((definition, index) => ({
+          key: `block:${index}`,
+          index,
+          classIndex: definition.class,
+          code: definition.code,
+          label: definition.label,
+          color: DATA.classes[definition.class]?.color || "#5c7f9f"
+        }))
+        .filter((item) => state.rankClass === "all" || item.classIndex === +state.rankClass);
+    }
+    if (state.rankLevel === "code") {
+      return DATA.codes
+        .map((definition, index) => ({
+          key: `code:${index}`,
+          index,
+          classIndex: definition.class,
+          code: definition.code,
+          label: definition.label,
+          color: DATA.classes[definition.class]?.color || "#5c7f9f"
+        }))
+        .filter((item) => state.rankClass === "all" || item.classIndex === +state.rankClass);
+    }
+    return DATA.classes.map((definition, index) => ({
+      key: `class:${index}`,
+      index,
+      classIndex: index,
+      code: definition.roman,
+      label: definition.short,
+      color: definition.color
+    }));
+  };
+
+  const rowCauseIndex = (row) => {
+    if (state.rankLevel === "class") return classOf(row);
+    if (state.rankLevel === "block") return blockOf(row);
+    return row[3];
+  };
+
+  const aggregate = (rows, definitions) => {
+    const byIndex = new Map(definitions.map((definition) => [definition.index, {
+      ...definition,
+      n: 0,
+      pgpzh: 0,
+      ages: []
+    }]));
+    let denominator = 0;
+    rows.forEach((row) => {
+      const classIndex = classOf(row);
+      if (classIndex < 0 || (state.rankClass !== "all" && state.rankLevel !== "class" && classIndex !== +state.rankClass)) return;
+      const index = rowCauseIndex(row);
+      const item = byIndex.get(index);
+      if (!item) return;
+      denominator += 1;
+      item.n += 1;
+      if (row[2] >= 0) {
+        item.ages.push(row[2]);
+        item.pgpzh += Math.max(75 - row[2], 0);
+      }
+    });
+    const items = [...byIndex.values()].filter((item) => item.n > 0).map((item) => ({
+      ...item,
+      share: denominator ? item.n / denominator * 100 : 0,
+      median: item.ages.length ? quantile(item.ages, .5) : null
+    }));
+    items.forEach((item) => { item.value = item[state.rankMetric]; });
+    return { items, total: denominator };
+  };
+
+  const ranked = (aggregation) => aggregation.items
+    .filter((item) => Number.isFinite(item.value))
+    .sort((left, right) => right.value - left.value || right.n - left.n || left.index - right.index)
+    .map((item, index) => ({ ...item, rank: index + 1 }));
+
+  const rowsForYear = (year) => filtered({ years: [year] });
+
+  const comparisonSlices = () => {
+    if (state.rankCompare === "sex") {
+      const base = filtered({ ignoreSex: true });
+      return [
+        { key: "male", label: "Мужчины", note: state.year === "all" ? "2023–2025" : String(state.year), rows: base.filter((row) => row[1] === 1) },
+        { key: "female", label: "Женщины", note: state.year === "all" ? "2023–2025" : String(state.year), rows: base.filter((row) => row[1] === 2) }
+      ];
+    }
+    return [
+      { key: "2023", label: "2023", note: state.sex === "all" ? "оба пола" : state.sex === "1" ? "мужчины" : "женщины", rows: rowsForYear(2023) },
+      { key: "2025", label: "2025", note: state.sex === "all" ? "оба пола" : state.sex === "1" ? "мужчины" : "женщины", rows: rowsForYear(2025) }
+    ];
+  };
+
+  const movementTone = (rankDelta) => rankDelta > 0
+    ? { color: "#dc6a5f", className: "is-rise", word: "поднялась" }
+    : rankDelta < 0
+      ? { color: "#4b84bd", className: "is-fall", word: "снизилась" }
+      : { color: "#9ca8b7", className: "is-stable", word: "сохранила позицию" };
+
+  const contextFor = (definition, series, labels) => {
+    const first = series[0];
+    const last = series[series.length - 1];
+    const rankDelta = first.rank - last.rank;
+    const valueDelta = last.value - first.value;
+    const relative = first.value > 0 ? valueDelta / first.value * 100 : null;
+    const shareDelta = last.share - first.share;
+    const tone = movementTone(rankDelta);
+    const positionCount = Math.abs(rankDelta);
+    const positionWord = positionCount % 10 === 1 && positionCount % 100 !== 11
+      ? "позицию"
+      : positionCount % 10 >= 2 && positionCount % 10 <= 4 && !(positionCount % 100 >= 12 && positionCount % 100 <= 14)
+        ? "позиции"
+        : "позиций";
+    const rankPhrase = rankDelta === 0
+      ? `Ранг не изменился: ${first.rank}-е место`
+      : `Ранг ${rankDelta > 0 ? "повысился" : "понизился"} на ${positionCount} ${positionWord}: с ${first.rank}-го на ${last.rank}-е место`;
+    const volumePhrase = relative == null
+      ? "Относительное изменение не рассчитывается из-за нулевого исходного значения."
+      : relative > 0
+        ? `Выбранный показатель вырос на ${number(relative, 1)}%.`
+        : relative < 0
+          ? `Выбранный показатель снизился на ${number(Math.abs(relative), 1)}%.`
+          : "Выбранный показатель не изменился.";
+    return {
+      key: definition.key,
+      title: `${definition.code} · ${definition.label}`,
+      subtitle: `${labels[0]} → ${labels[labels.length - 1]} · ${metricLabel()}`,
+      primary: { label: `${labels[labels.length - 1]} · ${metricLabel()}`, value: formatMetric(last.value) },
+      change: { value: signed(relative, "%") },
+      metrics: [
+        { label: "Изменение ранга", value: rankDelta === 0 ? "без изменения" : `${rankDelta > 0 ? "↑" : "↓"} ${Math.abs(rankDelta)}`, className: tone.className },
+        { label: `${labels[0]} → ${labels[labels.length - 1]}`, value: `${first.rank} → ${last.rank} место` },
+        { label: "Изменение значения", value: `${signed(valueDelta, metricUnit())}`, className: relative > 0 ? "is-rise" : relative < 0 ? "is-fall" : "" },
+        { label: "Изменение доли", value: `${signed(shareDelta, " п.п.")}` }
+      ],
+      details: [
+        { label: `${labels[0]} · значение`, value: formatMetric(first.value) },
+        { label: `${labels[labels.length - 1]} · значение`, value: formatMetric(last.value) },
+        { label: `${labels[0]} · доля`, value: `${number(first.share, 1)}%` },
+        { label: `${labels[labels.length - 1]} · доля`, value: `${number(last.share, 1)}%` },
+        { label: "Медианный возраст", value: last.median == null ? "н/д" : `${number(last.median, 0)} лет` },
+        { label: "ПГПЖ-75", value: number(last.pgpzh, 0) }
+      ],
+      insight: `${definition.code} · ${definition.label}. ${rankPhrase}. ${volumePhrase}`
+    };
+  };
+
+  const emitContext = (payload) => {
+    selectedPayload = payload;
+    window.dispatchEvent(new CustomEvent("atlas:inspector-context", { detail: payload }));
+  };
+
+  const tooltipHtml = (definition, series, labels) => {
+    const first = series[0];
+    const last = series[series.length - 1];
+    const rankDelta = first.rank - last.rank;
+    const valueDelta = first.value > 0 ? (last.value - first.value) / first.value * 100 : null;
+    return `<b>${esc(definition.code)} · ${esc(definition.label)}</b><div class="tip-grid">`
+      + series.map((item, index) => `<span>${esc(labels[index])}</span><strong>${item.rank} место · ${esc(formatMetric(item.value))}</strong>`).join("")
+      + `<span>Изменение ранга</span><strong>${rankDelta > 0 ? "↑" : rankDelta < 0 ? "↓" : "—"} ${Math.abs(rankDelta)}</strong>`
+      + `<span>Изменение значения</span><strong>${esc(signed(valueDelta, "%"))}</strong></div>`;
+  };
+
+  const setTrajectoryState = (root, group, active) => {
+    root.classList.toggle("has-focus", active);
+    group.classList.toggle("is-active", active);
+  };
+
+  const attachTrajectoryInteraction = (root, group, definition, series, labels) => {
+    group.dataset.inspectorManaged = "true";
+    group.setAttribute("tabindex", "0");
+    group.setAttribute("role", "button");
+    group.setAttribute("aria-label", `${definition.code}. ${definition.label}. ${labels[0]}: ${series[0].rank} место. ${labels[labels.length - 1]}: ${series[series.length - 1].rank} место.`);
+    const payload = contextFor(definition, series, labels);
+    const select = () => {
+      selectedKey = definition.key;
+      root.querySelectorAll(".rank-trajectory").forEach((item) => item.classList.toggle("is-selected", item === group));
+      emitContext(payload);
+    };
+    group.addEventListener("mouseenter", () => setTrajectoryState(root, group, true));
+    group.addEventListener("mouseleave", () => setTrajectoryState(root, group, false));
+    group.addEventListener("focus", () => setTrajectoryState(root, group, true));
+    group.addEventListener("blur", () => setTrajectoryState(root, group, false));
+    group.addEventListener("click", select);
+    group.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      select();
+    });
+    addTip(group, tooltipHtml(definition, series, labels));
+    if (selectedKey === definition.key) {
+      group.classList.add("is-selected");
+      selectedPayload = payload;
+    }
+    return payload;
+  };
+
+  const rootShell = (title, subtitle, footnote) => {
+    const root = document.createElement("section");
+    root.className = "rank-analysis";
+    root.innerHTML = `<header class="rank-analysis__toolbar"><div class="rank-analysis__summary"><strong>${esc(title)}</strong><span>${esc(subtitle)}</span></div><div class="rank-analysis__legend"><span><i class="is-rise"></i>подъём к 1 месту</span><span><i class="is-fall"></i>снижение</span><span><i class="is-stable"></i>без изменения</span></div></header><div class="rank-analysis__canvas"></div><footer class="rank-analysis__footnote">${esc(footnote)}</footer>`;
+    return root;
+  };
+
+  const trajectoryKeys = (rankings) => {
+    const top = Math.max(5, Number(state.rankTop) || 15);
+    const keys = new Set(rankings.flatMap((list) => list.slice(0, top).map((item) => item.key)));
+    if (state.rankOnlyChanges === "1") {
+      return [...keys].filter((key) => {
+        const positions = rankings.map((list) => list.find((item) => item.key === key)?.rank ?? Number.MAX_SAFE_INTEGER);
+        return positions.some((position, index) => index && position !== positions[index - 1]);
+      });
+    }
+    return [...keys];
+  };
+
+  const compareChart = () => {
+    const definitions = causeDefinitions();
+    const slices = comparisonSlices();
+    const aggregations = slices.map((slice) => aggregate(slice.rows, definitions));
+    const rankings = aggregations.map(ranked);
+    const keys = trajectoryKeys(rankings);
+    const maps = rankings.map((list) => new Map(list.map((item) => [item.key, item])));
+    const items = keys.map((key) => definitions.find((definition) => definition.key === key)).filter(Boolean);
+    const rankedItems = items.map((definition) => ({
+      definition,
+      series: maps.map((map, side) => map.get(definition.key) || {
+        ...definition,
+        rank: rankings[side].length + 1,
+        n: 0,
+        share: 0,
+        pgpzh: 0,
+        median: null,
+        value: 0
+      })
+    }));
+    if (!rankedItems.length) return null;
+    if (!rankedItems.some((item) => item.definition.key === selectedKey)) selectedKey = rankedItems[0].definition.key;
+    const leftOrder = [...rankedItems].sort((a, b) => a.series[0].rank - b.series[0].rank);
+    const rightOrder = [...rankedItems].sort((a, b) => a.series[1].rank - b.series[1].rank);
+    const leftPosition = new Map(leftOrder.map((item, index) => [item.definition.key, index]));
+    const rightPosition = new Map(rightOrder.map((item, index) => [item.definition.key, index]));
+    const root = rootShell(
+      `${slices[0].label} → ${slices[1].label}`,
+      `${metricLabel()} · ${state.rankLevel === "class" ? "классы" : state.rankLevel === "block" ? "крупные блоки" : "трёхзначные коды"} · топ-${state.rankTop}`,
+      state.rankCompare === "sex"
+        ? "Сравнение показывает структуру причин у мужчин и женщин. Это не половозрастной коэффициент смертности, поскольку численность населения по полу здесь не используется."
+        : "Показаны причины, вошедшие в топ хотя бы одного среза. Место рассчитано среди всех причин выбранного уровня, а не только среди видимых линий."
+    );
+    const canvas = root.querySelector(".rank-analysis__canvas");
+    const width = Math.max(760, Math.round(els.viz.clientWidth || 980));
+    const height = Math.max(460, Math.round((els.viz.clientHeight || 640) - 104));
+    const graphic = svg("svg", { viewBox: `0 0 ${width} ${height}`, class: "rank-analysis-svg", "aria-label": `Изменение рангов: ${slices[0].label} и ${slices[1].label}` });
+    const x1 = Math.max(240, width * .32);
+    const x2 = Math.min(width - 240, width * .68);
+    const top = 55;
+    const bottom = 22;
+    const rowStep = (height - top - bottom) / Math.max(rankedItems.length - 1, 1);
+    const y = (position) => top + position * rowStep;
+    textNode(graphic, x1, 20, slices[0].label, "rank-column-title", "middle");
+    textNode(graphic, x1, 34, slices[0].note, "rank-column-subtitle", "middle");
+    textNode(graphic, x2, 20, slices[1].label, "rank-column-title", "middle");
+    textNode(graphic, x2, 34, slices[1].note, "rank-column-subtitle", "middle");
+    [x1, x2].forEach((x) => graphic.appendChild(svg("line", { x1: x, y1: 43, x2: x, y2: height - 10, class: "rank-guide" })));
+    let firstPayload = null;
+    rankedItems.forEach(({ definition, series }) => {
+      const y1 = y(leftPosition.get(definition.key));
+      const y2 = y(rightPosition.get(definition.key));
+      const delta = series[0].rank - series[1].rank;
+      const tone = movementTone(delta);
+      const group = svg("g", { class: `rank-trajectory ${tone.className}` });
+      const line = svg("line", { x1, y1, x2, y2, class: "rank-line", stroke: tone.color, "stroke-width": delta === 0 ? 1.8 : 2.4, opacity: .88 });
+      const hit = svg("line", { x1, y1, x2, y2, class: "rank-hit" });
+      group.append(line, hit);
+      group.appendChild(svg("circle", { cx: x1, cy: y1, r: 4, fill: tone.color, class: "rank-point" }));
+      group.appendChild(svg("circle", { cx: x2, cy: y2, r: 4, fill: tone.color, class: "rank-point" }));
+      const leftText = textNode(group, x1 - 11, y1 - 1, `${series[0].rank}. ${definition.code} ${shortLabel(definition.label, width < 1050 ? 24 : 34)}`, "rank-label", "end");
+      const leftValue = textNode(group, x1 - 11, y1 + 10, formatMetric(series[0].value), "rank-label-value", "end");
+      const rightText = textNode(group, x2 + 11, y2 - 1, `${series[1].rank}. ${definition.code} ${shortLabel(definition.label, width < 1050 ? 24 : 34)}`, "rank-label", "start");
+      const rightValue = textNode(group, x2 + 11, y2 + 10, formatMetric(series[1].value), "rank-label-value", "start");
+      [leftText, leftValue, rightText, rightValue].forEach((node) => { node.style.pointerEvents = "none"; });
+      const middleX = (x1 + x2) / 2;
+      const middleY = (y1 + y2) / 2;
+      group.appendChild(svg("rect", { x: middleX - 17, y: middleY - 11, width: 34, height: 22, rx: 11, class: "rank-delta-pill", stroke: tone.color }));
+      const deltaText = textNode(group, middleX, middleY + 3.5, delta === 0 ? "—" : `${delta > 0 ? "↑" : "↓"}${Math.abs(delta)}`, "rank-delta-text", "middle");
+      deltaText.setAttribute("fill", tone.color);
+      graphic.appendChild(group);
+      const payload = attachTrajectoryInteraction(graphic, group, definition, series, slices.map((slice) => slice.label));
+      if (!firstPayload) firstPayload = payload;
+    });
+    canvas.appendChild(graphic);
+    return { root, firstPayload };
+  };
+
+  const bumpChart = () => {
+    const definitions = causeDefinitions();
+    const years = DATA.years.slice().sort((a, b) => a - b);
+    const aggregations = years.map((year) => aggregate(rowsForYear(year), definitions));
+    const rankings = aggregations.map(ranked);
+    const keys = trajectoryKeys(rankings);
+    const maps = rankings.map((list) => new Map(list.map((item) => [item.key, item])));
+    const items = keys.map((key) => definitions.find((definition) => definition.key === key)).filter(Boolean);
+    const rankedItems = items.map((definition) => ({
+      definition,
+      series: maps.map((map, yearIndex) => map.get(definition.key) || {
+        ...definition,
+        rank: rankings[yearIndex].length + 1,
+        n: 0,
+        share: 0,
+        pgpzh: 0,
+        median: null,
+        value: 0
+      })
+    }));
+    if (!rankedItems.length) return null;
+    if (!rankedItems.some((item) => item.definition.key === selectedKey)) selectedKey = rankedItems[0].definition.key;
+    const displayPositions = years.map((_, yearIndex) => new Map(
+      [...rankedItems]
+        .sort((a, b) => a.series[yearIndex].rank - b.series[yearIndex].rank)
+        .map((item, index) => [item.definition.key, index])
+    ));
+    const root = rootShell(
+      "Траектории 2023–2025",
+      `${metricLabel()} · ${state.rankLevel === "class" ? "классы" : state.rankLevel === "block" ? "крупные блоки" : "трёхзначные коды"} · топ-${state.rankTop}`,
+      "Линия показывает ежегодное положение причины. Место рассчитано среди всех причин выбранного уровня; подписи даны на концах траектории. Глобальный фильтр года в этом режиме не применяется."
+    );
+    const canvas = root.querySelector(".rank-analysis__canvas");
+    const width = Math.max(760, Math.round(els.viz.clientWidth || 980));
+    const height = Math.max(460, Math.round((els.viz.clientHeight || 640) - 104));
+    const graphic = svg("svg", { viewBox: `0 0 ${width} ${height}`, class: "rank-analysis-svg", "aria-label": "Траектории рангов причин смерти по годам" });
+    const left = Math.max(145, width * .18);
+    const right = Math.min(width - 235, width * .76);
+    const top = 54;
+    const bottom = 24;
+    const x = (index) => left + (right - left) * index / Math.max(years.length - 1, 1);
+    const rowStep = (height - top - bottom) / Math.max(rankedItems.length - 1, 1);
+    const y = (yearIndex, key) => top + displayPositions[yearIndex].get(key) * rowStep;
+    years.forEach((year, index) => {
+      const xpos = x(index);
+      graphic.appendChild(svg("line", { x1: xpos, y1: 38, x2: xpos, y2: height - 10, class: "rank-guide" }));
+      textNode(graphic, xpos, 22, year, "rank-year-label", "middle");
+    });
+    let firstPayload = null;
+    rankedItems.forEach(({ definition, series }) => {
+      const delta = series[0].rank - series[series.length - 1].rank;
+      const tone = movementTone(delta);
+      const points = series.map((_, index) => [x(index), y(index, definition.key)]);
+      const pathD = points.map((point, index) => `${index ? "L" : "M"}${point[0].toFixed(1)},${point[1].toFixed(1)}`).join(" ");
+      const group = svg("g", { class: `rank-trajectory ${tone.className}` });
+      group.appendChild(svg("path", { d: pathD, class: "rank-line", fill: "none", stroke: tone.color, "stroke-width": delta === 0 ? 1.8 : 2.4, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: .88 }));
+      group.appendChild(svg("path", { d: pathD, class: "rank-hit" }));
+      points.forEach((point, index) => {
+        group.appendChild(svg("circle", { cx: point[0], cy: point[1], r: 8, fill: tone.color, class: "rank-point rank-point--numbered" }));
+        const rankText = textNode(group, point[0], point[1] + 3.2, series[index].rank, "rank-delta-text rank-rank-number", "middle");
+        rankText.setAttribute("fill", "#fff");
+        rankText.style.pointerEvents = "none";
+      });
+      textNode(group, points[0][0] - 10, points[0][1] + 3, `${definition.code} ${shortLabel(definition.label, 20)}`, "rank-label", "end");
+      textNode(group, points[points.length - 1][0] + 10, points[points.length - 1][1] - 1, `${definition.code} ${shortLabel(definition.label, width < 1050 ? 23 : 31)}`, "rank-label", "start");
+      textNode(group, points[points.length - 1][0] + 10, points[points.length - 1][1] + 10, formatMetric(series[series.length - 1].value), "rank-label-value", "start");
+      graphic.appendChild(group);
+      const payload = attachTrajectoryInteraction(graphic, group, definition, series, years.map(String));
+      if (!firstPayload) firstPayload = payload;
+    });
+    canvas.appendChild(graphic);
+    return { root, firstPayload };
+  };
+
+  const rankControls = () => {
+    const classSelector = state.rankLevel === "class" ? "" : selectField(
+      "rankClass",
+      "Класс для детализации",
+      classOptions("Все классы"),
+      state.rankClass
+    );
+    els.local.innerHTML = `
+      <span class="rank-controls__label">Режим анализа</span>
+      <div class="rank-mode-switch" role="group" aria-label="Режим анализа рангов">
+        <button type="button" data-rank-view="compare" aria-pressed="${state.rankView === "compare"}">Два среза</button>
+        <button type="button" data-rank-view="trend" aria-pressed="${state.rankView === "trend"}">По годам</button>
+      </div>
+      ${state.rankView === "compare" ? selectField("rankCompare", "Сравнивать", [["time", "2023 → 2025"], ["sex", "Мужчины → женщины"]], state.rankCompare) : ""}
+      ${selectField("rankLevel", "Уровень МКБ-10", [["class", "Классы"], ["block", "Крупные блоки"], ["code", "Трёхзначные коды"]], state.rankLevel)}
+      ${classSelector}
+      <div class="rank-control-row">
+        ${selectField("rankMetric", "Показатель", [["n", "Количество смертей"], ["share", "Доля внутри среза"], ["pgpzh", "ПГПЖ-75"]], state.rankMetric)}
+        ${selectField("rankTop", "Показать", [["10", "Топ-10"], ["15", "Топ-15"], ["20", "Топ-20"]], state.rankTop)}
+      </div>
+      <label class="rank-inline-check"><input id="rankOnlyChanges" type="checkbox" ${state.rankOnlyChanges === "1" ? "checked" : ""}><span>Показывать только причины, изменившие позицию</span></label>`;
+    els.local.querySelectorAll("[data-rank-view]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (state.rankView === button.dataset.rankView) return;
+        state.rankView = button.dataset.rankView;
+        selectedKey = "";
+        render();
+      });
+    });
+    ["rankCompare", "rankLevel", "rankClass", "rankMetric", "rankTop"].forEach((id) => {
+      const control = document.getElementById(id);
+      if (!control) return;
+      control.addEventListener("change", () => {
+        state[id] = control.value;
+        if (id === "rankLevel" && control.value === "class") state.rankClass = "all";
+        selectedKey = "";
+        render();
+      });
+    });
+    document.getElementById("rankOnlyChanges")?.addEventListener("change", (event) => {
+      state.rankOnlyChanges = event.target.checked ? "1" : "0";
+      selectedKey = "";
+      render();
+    });
+  };
+
+  localControls = () => {
+    els.viz.classList.toggle("rank-analysis-host", state.view === "arrow");
+    if (state.view !== "arrow") {
+      baseLocalControls();
+      return;
+    }
+    rankControls();
+  };
+
+  renderArrow = () => {
+    state.arrowMode = state.rankCompare;
+    const result = state.rankView === "trend" ? bumpChart() : compareChart();
+    if (!result) {
+      els.viz.innerHTML = '<div class="rank-analysis__empty">Нет данных для построения рейтинга при выбранных фильтрах.</div>';
+      window.dispatchEvent(new CustomEvent("atlas:inspector-context", { detail: null }));
+      return;
+    }
+    els.viz.appendChild(result.root);
+    const payload = selectedPayload || result.firstPayload;
+    requestAnimationFrame(() => emitContext(payload));
+    els.meta.insertAdjacentHTML("beforeend", `<span class="chip">${state.rankView === "trend" ? "траектория 3 лет" : "2 сравниваемых среза"}</span><span class="chip">${esc(metricLabel())}</span>`);
+  };
+})();

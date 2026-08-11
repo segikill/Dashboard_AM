@@ -404,9 +404,9 @@
       type: "line",
       source: `${PREFIX}municipalities`,
       paint: {
-        "line-color": "#ffffff",
-        "line-opacity": .9,
-        "line-width": ["interpolate", ["linear"], ["zoom"], 4, .75, 8, 1.25, 11, 1.7]
+        "line-color": "#080808",
+        "line-opacity": .2,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 6, .75, 10, 1.25, 14, 1.7]
       }
     });
     map.addLayer({

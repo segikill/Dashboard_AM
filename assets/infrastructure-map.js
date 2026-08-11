@@ -39,7 +39,24 @@
     ]
   };
   const DATA_SCRIPT = "data/infrastructure-data.js?v=20260730-5";
+  const ROADS_DATA_SCRIPT = "data/roads-data.js?v=20260731-1";
   const FACILITY_ICON_ROOT = "assets/icons/medical-facilities";
+
+  const ROAD_PALETTES = {
+    warm: {
+      trunk: "#B7864F",
+      primary: "#708696",
+      secondary: "#9BA9B3",
+      tertiary: "#C4CBD0"
+    },
+    neutral: {
+      trunk: "#657A8B",
+      primary: "#81939F",
+      secondary: "#A4B1B9",
+      tertiary: "#CAD1D5"
+    }
+  };
+  const ROAD_LAYER_CLASSES = ["trunk", "primary", "secondary", "tertiary"];
 
   const FACILITY_TYPES = [
     { code: "hospital", label: "Больницы", color: "#2563EB", iconFile: "hospital.svg" },
@@ -88,6 +105,7 @@
   let map = null;
   let mountToken = 0;
   let dataPromise = null;
+  let roadsDataPromise = null;
   let mapLibrePromise = null;
   let infrastructureData = null;
   let clusteredFacilityInputCount = 0;
@@ -99,6 +117,9 @@
     municipalities: true,
     settlements: false,
     settlementLabels: true,
+    roadsMode: "main",
+    roadPalette: "warm",
+    roadLabels: false,
     basemap: true,
     isochroneOpacity: 1
   };
@@ -170,6 +191,16 @@
     return dataPromise;
   };
 
+  const ensureRoadsData = () => {
+    if (window.AMUR_ROADS_DATA) return Promise.resolve(window.AMUR_ROADS_DATA);
+    if (!roadsDataPromise) {
+      roadsDataPromise = loadScript(ROADS_DATA_SCRIPT, "amur-roads-data").then(
+        () => window.AMUR_ROADS_DATA
+      );
+    }
+    return roadsDataPromise;
+  };
+
   const facilityIconUrl = (item) => `${FACILITY_ICON_ROOT}/${item.iconFile}`;
   const facilityMapIconUrl = (item) => (
     infrastructureData?.facilityIcons?.[item.code] || facilityIconUrl(item)
@@ -180,8 +211,9 @@
       <img src="${facilityIconUrl(item)}" alt="" width="28" height="28">
     </span>`;
 
-  const buildPanel = (data) => {
+  const buildPanel = (data, roadsData) => {
     const counts = data.meta.facility_counts || {};
+    const roadCount = Number(roadsData?.meta?.features || roadsData?.features?.length || 0);
     const coverageByMinutes = new Map(
       (data.meta.isochrone_population_coverage || []).map((item) => [Number(item.minutes), item])
     );
@@ -247,6 +279,29 @@
             </label>
             <input id="infraIsoOpacity" class="infra-range" type="range" min="20" max="100" step="5" value="100">
           </section>
+          <section class="infra-layer-group infra-roads-group">
+            <div class="infra-group-title"><span>Дорожная сеть</span><small>${formatNumber(roadCount)} линий</small></div>
+            <div class="infra-road-mode" role="group" aria-label="Детализация дорожной сети">
+              <button class="${layerState.roadsMode === "hidden" ? "is-active" : ""}" type="button" data-road-mode="hidden">Скрыть</button>
+              <button class="${layerState.roadsMode === "main" ? "is-active" : ""}" type="button" data-road-mode="main">Основные</button>
+              <button class="${layerState.roadsMode === "all" ? "is-active" : ""}" type="button" data-road-mode="all">Подробно</button>
+            </div>
+            <div class="infra-road-palette-title">Вариант оформления</div>
+            <div class="infra-road-palettes" role="group" aria-label="Палитра дорожной сети">
+              <button class="${layerState.roadPalette === "warm" ? "is-active" : ""}" type="button" data-road-palette="warm">
+                <span class="infra-road-swatches is-warm" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                <b>Тёплая магистраль</b><small>акцент на транспортном каркасе</small>
+              </button>
+              <button class="${layerState.roadPalette === "neutral" ? "is-active" : ""}" type="button" data-road-palette="neutral">
+                <span class="infra-road-swatches is-neutral" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                <b>Нейтральная</b><small>спокойный серо-синий фон</small>
+              </button>
+            </div>
+            <button class="infra-road-label-toggle ${layerState.roadLabels ? "is-active" : ""}" type="button" data-road-labels aria-pressed="${layerState.roadLabels}">
+              <span aria-hidden="true">Aa</span><b>Подписи трасс</b><small>по масштабу</small>
+            </button>
+            <p class="infra-road-note">Функциональные классы OSM, а не юридическая принадлежность дорог. Слой используется как пространственный контекст доступности от больниц.</p>
+          </section>
           <section class="infra-layer-group">
             <div class="infra-group-title"><span>Территориальный контекст</span><small>2021</small></div>
             <div class="infra-context-grid">
@@ -277,9 +332,9 @@
       </aside>`;
   };
 
-  const buildShell = (data) => `
+  const buildShell = (data, roadsData) => `
     <div class="infra-shell">
-      ${buildPanel(data)}
+      ${buildPanel(data, roadsData)}
       <section class="infra-map-column">
         <div class="infra-map-toolbar">
           <div><b>Карта медицинской инфраструктуры</b><span>Web Mercator · EPSG:3857</span></div>
@@ -422,6 +477,38 @@
     ]);
   };
 
+  const roadClassVisible = (roadClass) => {
+    if (layerState.roadsMode === "hidden") return false;
+    if (roadClass === "tertiary") return layerState.roadsMode === "all";
+    return true;
+  };
+
+  const syncRoadState = () => {
+    if (!map) return;
+    const palette = ROAD_PALETTES[layerState.roadPalette] || ROAD_PALETTES.warm;
+    ROAD_LAYER_CLASSES.forEach((roadClass) => {
+      const visible = roadClassVisible(roadClass);
+      const lineId = `${CUSTOM_LAYER_PREFIX}road-${roadClass}-line`;
+      setLayerVisibility(lineId, visible);
+      if (map.getLayer(lineId)) map.setPaintProperty(lineId, "line-color", palette[roadClass]);
+      if (["trunk", "primary"].includes(roadClass)) {
+        setLayerVisibility(`${CUSTOM_LAYER_PREFIX}road-${roadClass}-casing`, visible);
+      }
+    });
+    setLayerVisibility(
+      `${CUSTOM_LAYER_PREFIX}road-label-major`,
+      layerState.roadLabels && layerState.roadsMode !== "hidden"
+    );
+    setLayerVisibility(
+      `${CUSTOM_LAYER_PREFIX}road-label-secondary`,
+      layerState.roadLabels && layerState.roadsMode !== "hidden"
+    );
+    setLayerVisibility(
+      `${CUSTOM_LAYER_PREFIX}road-label-tertiary`,
+      layerState.roadLabels && layerState.roadsMode === "all"
+    );
+  };
+
   const syncLayerState = () => {
     setLayerVisibility(`${CUSTOM_LAYER_PREFIX}iso20-fill`, layerState.isochrone20);
     setLayerVisibility(`${CUSTOM_LAYER_PREFIX}iso20-line`, layerState.isochrone20);
@@ -448,15 +535,17 @@
       map.setPaintProperty(`${CUSTOM_LAYER_PREFIX}iso20-fill`, "fill-opacity", .35 * layerState.isochroneOpacity);
       map.setPaintProperty(`${CUSTOM_LAYER_PREFIX}iso60-fill`, "fill-opacity", .15 * layerState.isochroneOpacity);
     }
+    syncRoadState();
     syncFacilityFilter();
   };
 
-  const addSourcesAndLayers = async (data) => {
+  const addSourcesAndLayers = async (data, roadsData) => {
     baseLayerIds = map.getStyle().layers.map((layer) => layer.id);
     const firstBaseLabel = map.getStyle().layers.find((layer) => layer.type === "symbol")?.id;
 
     map.addSource(`${CUSTOM_LAYER_PREFIX}iso20`, { type: "geojson", data: data.isochrones20 });
     map.addSource(`${CUSTOM_LAYER_PREFIX}iso60`, { type: "geojson", data: data.isochrones60 });
+    map.addSource(`${CUSTOM_LAYER_PREFIX}roads`, { type: "geojson", data: roadsData });
     map.addSource(`${CUSTOM_LAYER_PREFIX}region-mask`, { type: "geojson", data: data.regionMask });
     map.addSource(`${CUSTOM_LAYER_PREFIX}municipalities`, { type: "geojson", data: data.municipalities });
     map.addSource(`${CUSTOM_LAYER_PREFIX}municipality-labels`, { type: "geojson", data: data.municipalityLabels });
@@ -473,13 +562,29 @@
 
     const belowLabels = firstBaseLabel || undefined;
     map.addLayer({
-      id: `${CUSTOM_LAYER_PREFIX}region-mask`,
-      type: "fill",
-      source: `${CUSTOM_LAYER_PREFIX}region-mask`,
+      id: `${CUSTOM_LAYER_PREFIX}road-tertiary-line`,
+      type: "line",
+      source: `${CUSTOM_LAYER_PREFIX}roads`,
+      minzoom: 8.8,
+      filter: ["==", ["get", "fclass"], "tertiary"],
+      layout: { "line-cap": "round", "line-join": "round" },
       paint: {
-        "fill-color": "#ffffff",
-        "fill-opacity": .7,
-        "fill-outline-color": "rgba(255,255,255,0)"
+        "line-color": ROAD_PALETTES.warm.tertiary,
+        "line-opacity": ["interpolate", ["linear"], ["zoom"], 8.8, .22, 11, .44, 14, .62],
+        "line-width": ["interpolate", ["linear"], ["zoom"], 8.8, .35, 11, .85, 13, 1.45, 15, 2.2]
+      }
+    }, belowLabels);
+    map.addLayer({
+      id: `${CUSTOM_LAYER_PREFIX}road-secondary-line`,
+      type: "line",
+      source: `${CUSTOM_LAYER_PREFIX}roads`,
+      minzoom: 6.6,
+      filter: ["==", ["get", "fclass"], "secondary"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": ROAD_PALETTES.warm.secondary,
+        "line-opacity": ["interpolate", ["linear"], ["zoom"], 6.6, .28, 9, .52, 13, .72],
+        "line-width": ["interpolate", ["linear"], ["zoom"], 6.6, .35, 8, .65, 10, 1.15, 12, 1.8, 14, 2.7]
       }
     }, belowLabels);
     map.addLayer({
@@ -507,19 +612,81 @@
       paint: { "line-color": "#ff1745", "line-opacity": .0, "line-width": 1.35 }
     }, belowLabels);
     map.addLayer({
+      id: `${CUSTOM_LAYER_PREFIX}road-primary-casing`,
+      type: "line",
+      source: `${CUSTOM_LAYER_PREFIX}roads`,
+      minzoom: 5.2,
+      filter: ["==", ["get", "fclass"], "primary"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#f8fafc",
+        "line-opacity": .72,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 5.2, 1.45, 7, 2.1, 9, 3.05, 11, 4.3, 13, 5.8]
+      }
+    }, belowLabels);
+    map.addLayer({
+      id: `${CUSTOM_LAYER_PREFIX}road-primary-line`,
+      type: "line",
+      source: `${CUSTOM_LAYER_PREFIX}roads`,
+      minzoom: 5.2,
+      filter: ["==", ["get", "fclass"], "primary"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": ROAD_PALETTES.warm.primary,
+        "line-opacity": ["interpolate", ["linear"], ["zoom"], 5.2, .45, 8, .65, 12, .8],
+        "line-width": ["interpolate", ["linear"], ["zoom"], 5.2, .55, 7, 1, 9, 1.7, 11, 2.7, 13, 4]
+      }
+    }, belowLabels);
+    map.addLayer({
+      id: `${CUSTOM_LAYER_PREFIX}road-trunk-casing`,
+      type: "line",
+      source: `${CUSTOM_LAYER_PREFIX}roads`,
+      minzoom: 3.8,
+      filter: ["==", ["get", "fclass"], "trunk"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#f8fafc",
+        "line-opacity": .78,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 5, 1.8, 8, 2.65, 10, 3.8, 12, 5.3, 14, 7.2, 14, 9]
+      }
+    }, belowLabels);
+    map.addLayer({
+      id: `${CUSTOM_LAYER_PREFIX}road-trunk-line`,
+      type: "line",
+      source: `${CUSTOM_LAYER_PREFIX}roads`,
+      minzoom: 3.8,
+      filter: ["==", ["get", "fclass"], "trunk"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": ROAD_PALETTES.warm.trunk,
+        "line-opacity": ["interpolate", ["linear"], ["zoom"], 3.8, .58, 8, .74, 12, .86],
+        "line-width": ["interpolate", ["linear"], ["zoom"], 3.8, .75, 6, 1.35, 8, 2.15, 10, 3.2, 12, 4.8, 14, 6.4]
+      }
+    }, belowLabels);
+    map.addLayer({
+      id: `${CUSTOM_LAYER_PREFIX}region-mask`,
+      type: "fill",
+      source: `${CUSTOM_LAYER_PREFIX}region-mask`,
+      paint: {
+        "fill-color": "#ffffff",
+        "fill-opacity": .7,
+        "fill-outline-color": "rgba(255,255,255,0)"
+      }
+    }, belowLabels);
+    map.addLayer({
       id: `${CUSTOM_LAYER_PREFIX}municipality-fill`,
       type: "fill",
       source: `${CUSTOM_LAYER_PREFIX}municipalities`,
-      paint: { "fill-color": "#4f6f8e", "fill-opacity": .035 }
+      paint: { "fill-color": "#ffffff", "fill-opacity": .035 }
     }, belowLabels);
     map.addLayer({
       id: `${CUSTOM_LAYER_PREFIX}municipality-line`,
       type: "line",
       source: `${CUSTOM_LAYER_PREFIX}municipalities`,
       paint: {
-        "line-color": "#4b6077",
-        "line-opacity": .72,
-        "line-width": ["interpolate", ["linear"], ["zoom"], 4, .65, 8, 1.15, 11, 1.7]
+        "line-color": "#050505",
+        "line-opacity": .25,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 6, .65, 10, 1.15, 13, 1.7]
       }
     }, belowLabels);
 
@@ -653,6 +820,77 @@
         "text-color": "#5a6879",
         "text-halo-color": "rgba(255,255,255,.85)",
         "text-halo-width": 1
+      }
+    });
+    map.addLayer({
+      id: `${CUSTOM_LAYER_PREFIX}road-label-major`,
+      type: "symbol",
+      source: `${CUSTOM_LAYER_PREFIX}roads`,
+      minzoom: 6.2,
+      filter: [
+        "all",
+        ["match", ["get", "fclass"], ["trunk", "primary"], true, false],
+        ["any", ["has", "ref"], ["has", "name"]]
+      ],
+      layout: {
+        "symbol-placement": "line",
+        "symbol-spacing": 520,
+        "text-field": ["case", ["has", "ref"], ["get", "ref"], ["get", "name"]],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 6.2, 9, 10, 10.5, 13, 11.5],
+        "text-letter-spacing": .03,
+        "text-keep-upright": true,
+        "text-allow-overlap": false,
+        "text-optional": true
+      },
+      paint: {
+        "text-color": "#596874",
+        "text-halo-color": "rgba(255,255,255,.88)",
+        "text-halo-width": 1.35
+      }
+    });
+    map.addLayer({
+      id: `${CUSTOM_LAYER_PREFIX}road-label-secondary`,
+      type: "symbol",
+      source: `${CUSTOM_LAYER_PREFIX}roads`,
+      minzoom: 9.4,
+      filter: ["all", ["==", ["get", "fclass"], "secondary"], ["has", "name"]],
+      layout: {
+        "symbol-placement": "line",
+        "symbol-spacing": 620,
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 9.4, 8.8, 13, 10.5],
+        "text-keep-upright": true,
+        "text-allow-overlap": false,
+        "text-optional": true
+      },
+      paint: {
+        "text-color": "#6d7881",
+        "text-halo-color": "rgba(255,255,255,.86)",
+        "text-halo-width": 1.2
+      }
+    });
+    map.addLayer({
+      id: `${CUSTOM_LAYER_PREFIX}road-label-tertiary`,
+      type: "symbol",
+      source: `${CUSTOM_LAYER_PREFIX}roads`,
+      minzoom: 11.8,
+      filter: ["all", ["==", ["get", "fclass"], "tertiary"], ["has", "name"]],
+      layout: {
+        "symbol-placement": "line",
+        "symbol-spacing": 720,
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 11.8, 8.6, 15, 10.2],
+        "text-keep-upright": true,
+        "text-allow-overlap": false,
+        "text-optional": true
+      },
+      paint: {
+        "text-color": "#7b858c",
+        "text-halo-color": "rgba(255,255,255,.84)",
+        "text-halo-width": 1.05
       }
     });
 
@@ -916,6 +1154,21 @@
     shell.querySelectorAll("[data-basemap]").forEach((button) => {
       button.classList.toggle("is-active", (button.dataset.basemap === "on") === layerState.basemap);
     });
+    shell.querySelectorAll("[data-road-mode]").forEach((button) => {
+      const active = button.dataset.roadMode === layerState.roadsMode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    shell.querySelectorAll("[data-road-palette]").forEach((button) => {
+      const active = button.dataset.roadPalette === layerState.roadPalette;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    const roadLabels = shell.querySelector("[data-road-labels]");
+    if (roadLabels) {
+      roadLabels.classList.toggle("is-active", layerState.roadLabels);
+      roadLabels.setAttribute("aria-pressed", String(layerState.roadLabels));
+    }
   };
 
   const bindPanel = (shell, data) => {
@@ -957,6 +1210,25 @@
         syncButtons(shell);
         syncLayerState();
       });
+    });
+    shell.querySelectorAll("[data-road-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        layerState.roadsMode = button.dataset.roadMode;
+        syncButtons(shell);
+        syncLayerState();
+      });
+    });
+    shell.querySelectorAll("[data-road-palette]").forEach((button) => {
+      button.addEventListener("click", () => {
+        layerState.roadPalette = button.dataset.roadPalette;
+        syncButtons(shell);
+        syncLayerState();
+      });
+    });
+    shell.querySelector("[data-road-labels]")?.addEventListener("click", () => {
+      layerState.roadLabels = !layerState.roadLabels;
+      syncButtons(shell);
+      syncLayerState();
     });
     const opacity = shell.querySelector("#infraIsoOpacity");
     const output = shell.querySelector(".infra-range-label output");
@@ -1003,12 +1275,17 @@
     const token = mountToken;
     container.innerHTML = '<div class="infra-loading-card"><span></span><b>Подготавливаем инфраструктурную карту</b><small>данные загружаются только при открытии вкладки</small></div>';
     try {
-      const [maplibregl, data] = await Promise.all([ensureMapLibre(), ensureData()]);
+      const [maplibregl, data, roadsData] = await Promise.all([
+        ensureMapLibre(),
+        ensureData(),
+        ensureRoadsData()
+      ]);
       if (token !== mountToken || !container.isConnected) return;
       infrastructureData = data;
-      container.innerHTML = buildShell(data);
+      container.innerHTML = buildShell(data, roadsData);
       const shell = container.querySelector(".infra-shell");
       bindPanel(shell, data);
+      syncButtons(shell);
       map = new maplibregl.Map({
         container: shell.querySelector(".infra-map"),
         style: BASEMAP_STYLE,
@@ -1026,7 +1303,7 @@
       map.on("load", async () => {
         if (token !== mountToken) return;
         try {
-          await addSourcesAndLayers(data);
+          await addSourcesAndLayers(data, roadsData);
           bindMapInteractions(data);
           fitRegion(data, false);
           hideStatus(shell);

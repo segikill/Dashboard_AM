@@ -68,7 +68,7 @@ let browser;
   if (!first.mounted || first.layers.length < 22) {
     throw new Error("MapLibre thematic layers did not reach a usable state");
   }
-  if (first.sources.length !== 7) throw new Error(`Expected 7 custom sources, got ${first.sources.length}`);
+  if (first.sources.length !== 8) throw new Error(`Expected 8 custom sources including roads, got ${first.sources.length}`);
   if (!first.sources.includes("amur-infra-region-mask")) {
     throw new Error("Outside-region mask source is missing");
   }
@@ -82,8 +82,8 @@ let browser;
       || !first.layerState.municipalities || !first.layerState.basemap) {
     throw new Error("Required default infrastructure layers are not enabled");
   }
-  if (first.layerState.settlements || first.layerState.settlementLabels) {
-    throw new Error("Settlements and their labels must be disabled by default");
+  if (first.layerState.settlements || !first.layerState.settlementLabels) {
+    throw new Error("Settlement symbols must be disabled and settlement labels enabled by default");
   }
   if (Math.abs(first.municipalityLabelMinzoom - 8.35) > 0.001) {
     throw new Error(`Expected municipality labels from zoom 8.35, got ${first.municipalityLabelMinzoom}`);

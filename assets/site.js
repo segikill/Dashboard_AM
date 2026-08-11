@@ -186,8 +186,24 @@
       heatMetric: ["share", "n", "per1k", "per10k", "per100k"],
       heatLimit: ["25", "50", "all"],
       arrowMode: ["time", "sex", "region"],
-      pyramidMetric: ["n", "share"],
-      plotLevel: ["class", "code"],
+      rankView: ["compare", "trend"],
+      rankCompare: ["time", "sex"],
+      rankLevel: ["class", "block", "code"],
+      rankMetric: ["n", "share", "pgpzh"],
+      rankTop: ["10", "15", "20"],
+      rankOnlyChanges: ["0", "1"],
+      pyramidView: ["structure", "trend", "gap"],
+      pyramidLevel: ["class", "block", "code"],
+      pyramidMetric: ["n", "share", "pgpzh"],
+      pyramidAgeStep: ["5", "10"],
+      pyramidLabels: ["all", "major", "off"],
+      plotView: ["profile", "compare", "distribution"],
+      plotLevel: ["class", "block", "code"],
+      plotInterval: ["p10p90", "range"],
+      plotSort: ["n", "medianAsc", "medianDesc", "spread", "shift"],
+      plotMinN: ["5", "10", "20", "50"],
+      plotTop: ["15", "25"],
+      plotCompare: ["time", "sex"],
       mapUnit: ["settlement", "mo"],
       mapMetric: ["n", "share", "per1k", "per10k", "per100k"],
       mapLabels: ["auto", "centers", "off"],
@@ -196,7 +212,7 @@
       dotMetric: ["n", "share", "median", "pgpzh", "per1k", "per10k", "per100k"],
       dotLabels: ["outliers", "top", "off"]
     };
-    const classKeys = new Set(["pyramidClass", "plotClass", "mapClass", "dotClass"]);
+    const classKeys = new Set(["pyramidClass", "pyramidParentClass", "plotClass", "mapClass", "dotClass", "rankClass"]);
     const urlKeys = Object.keys(defaults);
     let restoringHistory = false;
     let searchTarget = null;
@@ -349,6 +365,8 @@
       if (enumValues[key]) return enumValues[key].includes(value);
       if (key === "year") return value === "all" || DATA.years.map(String).includes(value);
       if (classKeys.has(key)) return value === "all" || (Number.isInteger(+value) && +value >= 0 && +value < DATA.classes.length);
+      if (key === "pyramidCause") return value === "all" || (Number.isInteger(+value) && +value >= 0 && +value < Math.max(DATA.classes.length, DATA.blocks.length, DATA.codes.length));
+      if (key === "plotCause") return value === "all" || (Number.isInteger(+value) && +value >= 0 && +value < Math.max(DATA.classes.length, DATA.blocks.length, DATA.codes.length));
       if (key === "treeIndex") return Number.isInteger(+value) && +value >= -1 && +value < Math.max(DATA.classes.length, DATA.blocks.length);
       if (key === "mapScaleMax") return value === "" || (Number.isFinite(+value) && +value >= 0 && +value <= 1e9);
       if (key === "mapBreaks") {
@@ -388,6 +406,20 @@
       if (age) age.value = state.age;
       document.querySelectorAll("#sexSeg button").forEach((button) => button.classList.toggle("active", button.dataset.value === state.sex));
       document.querySelectorAll(".viz-btn").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
+    };
+
+    const resetTransientGlobalControlState = () => {
+      const year = document.getElementById("yearSelect");
+      const age = document.getElementById("ageSelect");
+      if (year) year.disabled = false;
+      if (age) age.disabled = false;
+      document.querySelectorAll("#sexSeg button").forEach((button) => { button.disabled = false; });
+      document.body.classList.remove(
+        "pyramid-filters-suspended",
+        "pyramid-trend-mode",
+        "plot-year-suspended",
+        "plot-sex-suspended"
+      );
     };
 
     const paletteDefinitions = {
@@ -1714,7 +1746,6 @@
       mapPerformance.filterMiss = false;
       mapPerformance.aggregateMiss = false;
       document.body.classList.remove("infrastructure-view");
-      window.AmurInfrastructureMap?.destroy?.();
       localControls();
       renderKpis();
       els.title.textContent = VIEWS.map[0];
@@ -2092,6 +2123,59 @@
       });
     };
 
+    const viewCacheHost = document.createElement("div");
+    viewCacheHost.className = "atlas-view-cache";
+    viewCacheHost.hidden = true;
+    viewCacheHost.setAttribute("aria-hidden", "true");
+    viewCacheHost.inert = true;
+    document.body.appendChild(viewCacheHost);
+
+    const viewCache = new Map();
+    const viewSignature = (view) => {
+      if (view === "infrastructure") return "infrastructure-static-v1";
+      const snapshot = {};
+      Object.keys(state).sort().forEach((key) => {
+        if (key !== "view") snapshot[key] = state[key];
+      });
+      return JSON.stringify(snapshot);
+    };
+
+    const parkView = (view) => {
+      if (!view || !els.viz.firstChild) return;
+      let entry = viewCache.get(view);
+      if (!entry) {
+        const holder = document.createElement("div");
+        holder.dataset.cachedView = view;
+        viewCacheHost.appendChild(holder);
+        entry = { holder, signature: "", metaHtml: "", title: "", subtitle: "", method: "" };
+        viewCache.set(view, entry);
+      }
+      entry.holder.replaceChildren(...els.viz.childNodes);
+      entry.signature = viewSignature(view);
+      entry.metaHtml = els.meta.innerHTML;
+      entry.title = els.title.textContent || "";
+      entry.subtitle = els.subtitle.textContent || "";
+      entry.method = els.method.textContent || "";
+    };
+
+    const restoreView = (view) => {
+      const entry = viewCache.get(view);
+      if (!entry) return null;
+      els.viz.replaceChildren(...entry.holder.childNodes);
+      return entry;
+    };
+
+    const refreshCachedChrome = (entry) => {
+      const infrastructureView = state.view === "infrastructure";
+      document.body.classList.toggle("infrastructure-view", infrastructureView);
+      localControls();
+      renderKpis();
+      els.title.textContent = entry?.title || VIEWS[state.view]?.[0] || "";
+      els.subtitle.textContent = entry?.subtitle || VIEWS[state.view]?.[1] || "";
+      els.method.textContent = entry?.method || METHOD[state.view] || "";
+      els.meta.innerHTML = entry?.metaHtml || "";
+    };
+
     const baseRender = render;
     let renderedView = state.view;
     render = () => {
@@ -2112,10 +2196,25 @@
         && DATA.records.length < 10000
         && typeof document.startViewTransition === "function";
       const updateDom = () => {
-        if (state.view !== "map") window.AmurMortalityMap?.destroy?.();
+        // Analysis modules temporarily suspend global filters in comparison modes.
+        // Always clear the previous view's state first; the active module can then
+        // reapply only the restrictions it actually needs.
+        resetTransientGlobalControlState();
+        if (changedView) parkView(previousView);
         els.viz.dataset.view = state.view;
-        if (state.view === "map") renderOptimizedMapView();
-        else baseRender();
+        const cached = changedView ? restoreView(nextView) : null;
+        const cacheFresh = cached && cached.signature === viewSignature(nextView);
+        if (state.view === "map") {
+          renderOptimizedMapView();
+        } else if (state.view === "infrastructure" && cached) {
+          refreshCachedChrome(cached);
+          requestAnimationFrame(() => window.AmurInfrastructureMap?.resize?.());
+        } else if (changedView && cacheFresh) {
+          refreshCachedChrome(cached);
+        } else {
+          if (cached) els.viz.replaceChildren();
+          baseRender();
+        }
         if (atlasDrawer) atlasDrawer.dataset.view = state.view;
         if (drawerTitle) drawerTitle.textContent = VIEWS[state.view]?.[0] || "Параметры";
         if (changedView) {
