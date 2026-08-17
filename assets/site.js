@@ -204,6 +204,7 @@
       plotMinN: ["5", "10", "20", "50"],
       plotTop: ["15", "25"],
       plotCompare: ["time", "sex"],
+      plotDistributionMetric: ["n", "share"],
       mapUnit: ["settlement", "mo"],
       mapMetric: ["n", "share", "per1k", "per10k", "per100k"],
       mapLabels: ["auto", "centers", "off"],
@@ -364,6 +365,7 @@
     const isValid = (key, value) => {
       if (enumValues[key]) return enumValues[key].includes(value);
       if (key === "year") return value === "all" || DATA.years.map(String).includes(value);
+      if (key === "plotYearA" || key === "plotYearB") return DATA.years.map(String).includes(value);
       if (classKeys.has(key)) return value === "all" || (Number.isInteger(+value) && +value >= 0 && +value < DATA.classes.length);
       if (key === "pyramidCause") return value === "all" || (Number.isInteger(+value) && +value >= 0 && +value < Math.max(DATA.classes.length, DATA.blocks.length, DATA.codes.length));
       if (key === "plotCause") return value === "all" || (Number.isInteger(+value) && +value >= 0 && +value < Math.max(DATA.classes.length, DATA.blocks.length, DATA.codes.length));
@@ -1979,14 +1981,20 @@
       changeNotice.textContent = changes.map((key) =>
         `${labels[key]}: ${filterDisplayValue(key, renderedFilters[key])} → ${filterDisplayValue(key, state[key])}`
       ).join(" · ");
-      changeNotice.classList.remove("is-visible");
-      void changeNotice.offsetWidth;
       changeNotice.classList.add("is-visible");
+      changeNotice.getAnimations().forEach((animation) => animation.cancel());
+      changeNotice.animate(
+        [{ opacity: .35, transform: "translateY(-3px)" }, { opacity: 1, transform: "translateY(0)" }],
+        { duration: Math.min(180, Math.max(90, motionDuration())), easing: "ease-out" }
+      );
       changes.forEach((key) => {
         const control = document.querySelector(selectors[key]);
-        control?.classList.remove("site-filter-changed");
-        void control?.offsetWidth;
         control?.classList.add("site-filter-changed");
+        control?.getAnimations().forEach((animation) => animation.cancel());
+        control?.animate(
+          [{ transform: "scale(.995)" }, { transform: "scale(1)" }],
+          { duration: Math.min(170, Math.max(80, motionDuration())), easing: "ease-out" }
+        );
         window.setTimeout(() => control?.classList.remove("site-filter-changed"), 720);
       });
       window.clearTimeout(changeNotice.hideTimer);
@@ -2004,7 +2012,9 @@
     const captureMotionSnapshot = (view) => {
       if (motionDuration() === 0 || view === "map") return null;
       const nodes = motionNodes(view);
-      if (!nodes.length || nodes.length > 240) return { bulk: true };
+      // Per-node FLIP animation forces layout reads for every SVG mark. Beyond
+      // this threshold a single canvas transition is both smoother and cheaper.
+      if (!nodes.length || nodes.length > 120) return { bulk: true };
       const boxes = new Map();
       nodes.forEach((element, index) => {
         const box = element.getBoundingClientRect();
@@ -2131,13 +2141,20 @@
     document.body.appendChild(viewCacheHost);
 
     const viewCache = new Map();
+    const sharedViewKeys = ["year", "sex", "age"];
+    const viewStateKeys = {
+      treemap: ["treeType", "treeIndex", "treeMetric", "treeColor"],
+      heatmap: ["heatUnit", "heatMetric", "heatLimit"],
+      arrow: ["arrowMode", "rankView", "rankCompare", "rankLevel", "rankClass", "rankMetric", "rankTop", "rankOnlyChanges"],
+      pyramid: ["pyramidView", "pyramidLevel", "pyramidCause", "pyramidParentClass", "pyramidMetric", "pyramidAgeStep", "pyramidLabels"],
+      plot: ["plotView", "plotLevel", "plotClass", "plotCause", "plotInterval", "plotSort", "plotMinN", "plotTop", "plotCompare", "plotYearA", "plotYearB", "plotDistributionMetric"],
+      map: ["mapUnit", "mapMetric", "mapClass", "mapScaleMax", "mapLabels", "mapPalette", "mapColorLow", "mapColorHigh", "mapBreaks"],
+      dotogram: ["dotUnit", "dotMetric", "dotClass", "dotLabels"]
+    };
     const viewSignature = (view) => {
       if (view === "infrastructure") return "infrastructure-static-v1";
-      const snapshot = {};
-      Object.keys(state).sort().forEach((key) => {
-        if (key !== "view") snapshot[key] = state[key];
-      });
-      return JSON.stringify(snapshot);
+      const keys = [...sharedViewKeys, ...(viewStateKeys[view] || [])];
+      return JSON.stringify(keys.map((key) => state[key]));
     };
 
     const parkView = (view) => {
@@ -2250,6 +2267,7 @@
 
     document.querySelectorAll(".viz-btn").forEach((button) => {
       button.onclick = () => {
+        if (state.view === button.dataset.view) return;
         state.view = button.dataset.view;
         render();
       };

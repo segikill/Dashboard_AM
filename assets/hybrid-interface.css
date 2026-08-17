@@ -380,6 +380,24 @@ body.hybrid-ui[data-workspace-mode="analytics"]:not([data-shell-view="treemap"])
   text-align: right;
 }
 
+.hybrid-inspector__action {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid #2873b8;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #175a96, #2f7fc4);
+  color: #fff;
+  cursor: pointer;
+  font-size: 9.5px;
+  font-weight: 850;
+  box-shadow: 0 5px 14px rgba(30, 92, 151, .16);
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.hybrid-inspector__action:hover { transform: translateY(-1px); box-shadow: 0 7px 18px rgba(30, 92, 151, .22); }
+.hybrid-inspector__action:active { transform: translateY(0); }
+
 .hybrid-inspector-toggle {
   display: none;
 }

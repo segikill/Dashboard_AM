@@ -157,8 +157,19 @@
       </section>
       <div class="hybrid-inspector__metrics">${metrics.map((item) => `<div class="hybrid-inspector__metric"><span>${escapeHtml(item.label)}</span><b class="${escapeHtml(item.className || "")}"${item.title ? ` title="${escapeHtml(item.title)}"` : ""}>${escapeHtml(item.value)}</b></div>`).join("")}</div>
       <section class="hybrid-inspector__section"><span class="hybrid-inspector__kicker">Автоматический вывод</span><p class="hybrid-inspector__insight">${escapeHtml(selectedInsight)}</p></section>
-      ${details.length ? `<section class="hybrid-inspector__section"><span class="hybrid-inspector__kicker">Детали выбранного элемента</span><dl class="hybrid-inspector__details">${details.map((item) => `<dt>${escapeHtml(item.label)}</dt><dd>${escapeHtml(item.value)}</dd>`).join("")}</dl></section>` : ""}`;
+      ${details.length ? `<section class="hybrid-inspector__section"><span class="hybrid-inspector__kicker">Детали выбранного элемента</span><dl class="hybrid-inspector__details">${details.map((item) => `<dt>${escapeHtml(item.label)}</dt><dd>${escapeHtml(item.value)}</dd>`).join("")}</dl></section>` : ""}
+      ${selected?.action ? `<button type="button" class="hybrid-inspector__action" data-inspector-action="${escapeHtml(selected.action.id)}" data-cause="${escapeHtml(selected.action.cause || "")}" data-level="${escapeHtml(selected.action.level || "")}">${escapeHtml(selected.action.label || "Открыть")}</button>` : ""}`;
   };
+
+  inspectorContent.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-inspector-action]");
+    if (!button) return;
+    window.dispatchEvent(new CustomEvent("atlas:inspector-action", { detail: {
+      id: button.dataset.inspectorAction,
+      cause: button.dataset.cause,
+      level: button.dataset.level
+    } }));
+  });
 
   const actionIcon = (expanded = false) => expanded
     ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/><path d="m4 9 5-5m6 0 5 5M4 15l5 5m6 0 5-5"/></svg>'
