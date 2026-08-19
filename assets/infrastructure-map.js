@@ -247,8 +247,9 @@
     return `
       <aside class="infra-layer-composer" aria-label="Управление слоями инфраструктурной карты">
         <header class="infra-panel-head">
-          <div><span>Состав карты</span><h3>Инфраструктура и доступность больниц</h3></div>
-          <button class="infra-panel-collapse" type="button" aria-label="Свернуть панель" title="Свернуть панель">‹</button>
+          <div class="react-infra-panel-host" data-react-infra-panel hidden></div>
+          <div data-legacy-infra-panel><span>Состав карты</span><h3>Инфраструктура и доступность больниц</h3></div>
+          <button class="infra-panel-collapse" data-legacy-infra-panel-toggle type="button" aria-label="Свернуть панель" title="Свернуть панель">‹</button>
         </header>
         <div class="infra-panel-scroll">
           <section class="infra-layer-group">
@@ -337,8 +338,11 @@
       ${buildPanel(data, roadsData)}
       <section class="infra-map-column">
         <div class="infra-map-toolbar">
-          <div><b>Карта медицинской инфраструктуры</b><span>Web Mercator · EPSG:3857</span></div>
-          <button class="infra-fit-button" type="button" title="Показать всю Амурскую область">Вся область</button>
+          <div class="react-infra-chrome-host" data-react-infra-chrome hidden></div>
+          <div class="legacy-infra-map-toolbar" data-legacy-infra-chrome>
+            <div><b>Карта медицинской инфраструктуры</b><span>Web Mercator · EPSG:3857</span></div>
+            <button class="infra-fit-button" type="button" title="Показать всю Амурскую область">Вся область</button>
+          </div>
         </div>
         <div class="infra-map" role="application" aria-label="Интерактивная карта медицинской инфраструктуры Амурской области"></div>
         <div class="infra-map-status" role="status">Загрузка картографического движка…</div>
@@ -1243,6 +1247,9 @@
       event.currentTarget.textContent = collapsed ? "›" : "‹";
       event.currentTarget.setAttribute("aria-label", collapsed ? "Развернуть панель" : "Свернуть панель");
       window.setTimeout(() => map?.resize(), 220);
+      window.dispatchEvent(new CustomEvent("atlas:infrastructure-panel", {
+        detail: { open: !collapsed }
+      }));
     });
   };
 

@@ -1,0 +1,34 @@
+{
+  "name": "dashboard-am",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Интерактивный атлас смертности Амурской области — постепенная гибридная миграция React + TypeScript.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "data:extract": "node scripts/extract_atlas_data.cjs",
+    "data:validate": "node scripts/validate_atlas_data.cjs",
+    "build": "npm run data:validate && tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run data:validate && vitest run",
+    "test:hybrid": "node scripts/test_hybrid_react.cjs",
+    "test:performance": "node scripts/test_performance.cjs"
+  },
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "playwright": "^1.62.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.11"
+  }
+}

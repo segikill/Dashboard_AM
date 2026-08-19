@@ -20,6 +20,8 @@
   const baseLocalControls = localControls;
   const firstYear = Math.min(...DATA.years);
   const lastYear = Math.max(...DATA.years);
+  let activePyramidModel = null;
+  let selectedPyramidKey = "";
 
   const number = (value, digits = 0) => new Intl.NumberFormat("ru-RU", {
     minimumFractionDigits: digits,
@@ -178,6 +180,21 @@
       : "";
     return {
       key: `age:${bin.index}`,
+      ageIndex: bin.index,
+      ageLabel: bin.label,
+      start: bin.start,
+      end: bin.end,
+      total: currentTotal,
+      maleN: male.n,
+      femaleN: female.n,
+      maleShare,
+      femaleShare,
+      ratio,
+      pgpzhMale: male.pgpzh,
+      pgpzhFemale: female.pgpzh,
+      baselineTotal: baseTotal,
+      changePercent: change,
+      leadingClass: lead ? `${lead.definition.roman}. ${lead.definition.short}` : "н/д",
       title: `Возраст ${bin.label} лет`,
       subtitle: `${causeLabel()} · ${state.pyramidView === "trend" ? `${firstYear} → ${lastYear}` : state.year === "all" ? `${firstYear}–${lastYear}` : state.year}`,
       primary: { label: "наблюдений в возрастной группе", value: number(currentTotal) },
@@ -202,6 +219,118 @@
 
   const emitContext = (payload) => {
     window.dispatchEvent(new CustomEvent("atlas:inspector-context", { detail: payload }));
+  };
+
+  const emitPyramidState = () => {
+    window.dispatchEvent(new CustomEvent("atlas:pyramid-state", { detail: getPublicSummary() }));
+  };
+
+  const publicContext = (payload, rank, binCount) => payload ? Object.freeze({
+    key: String(payload.key),
+    ageIndex: Number(payload.ageIndex),
+    ageLabel: String(payload.ageLabel),
+    start: Number(payload.start),
+    end: Number(payload.end),
+    total: Number(payload.total) || 0,
+    maleN: Number(payload.maleN) || 0,
+    femaleN: Number(payload.femaleN) || 0,
+    maleShare: Number(payload.maleShare) || 0,
+    femaleShare: Number(payload.femaleShare) || 0,
+    ratio: payload.ratio == null ? null : Number(payload.ratio),
+    pgpzhMale: Number(payload.pgpzhMale) || 0,
+    pgpzhFemale: Number(payload.pgpzhFemale) || 0,
+    baselineTotal: payload.baselineTotal == null ? null : Number(payload.baselineTotal),
+    changePercent: payload.changePercent == null ? null : Number(payload.changePercent),
+    leadingClass: String(payload.leadingClass || "н/д"),
+    title: String(payload.title),
+    subtitle: String(payload.subtitle),
+    insight: String(payload.insight || ""),
+    rank: Number(rank) || 0,
+    binCount: Number(binCount) || 0
+  }) : null;
+
+  function getPublicSummary() {
+    const model = activePyramidModel;
+    const definitions = causeDefinitions();
+    const ranked = model
+      ? [...model.items].sort((left, right) => right.total - left.total || right.ageIndex - left.ageIndex)
+      : [];
+    const rankMap = new Map(ranked.map((item, index) => [item.key, index + 1]));
+    const selectedPayload = model?.items.find((item) => item.key === selectedPyramidKey) || ranked[0] || null;
+    return Object.freeze({
+      active: state.view === "pyramid" && Boolean(model),
+      view: String(state.pyramidView),
+      level: String(state.pyramidLevel),
+      parentClass: String(state.pyramidParentClass),
+      cause: String(state.pyramidCause),
+      metric: String(state.pyramidMetric),
+      ageStep: String(state.pyramidAgeStep),
+      labels: String(state.pyramidLabels),
+      firstYear,
+      lastYear,
+      periodLabel: state.pyramidView === "trend" ? `${firstYear} → ${lastYear}` : state.year === "all" ? `${firstYear}–${lastYear}` : String(state.year),
+      causeLabel: causeLabel(),
+      classOptions: Object.freeze(DATA.classes.map((definition, index) => Object.freeze({
+        value: String(index),
+        label: `${definition.roman}. ${definition.short}`
+      }))),
+      causeOptions: Object.freeze(definitions.map((definition) => Object.freeze({
+        value: String(definition.index),
+        label: `${definition.code} · ${definition.label}`
+      }))),
+      total: Number(model?.current.total) || 0,
+      maleTotal: Number(model?.current.maleTotal) || 0,
+      femaleTotal: Number(model?.current.femaleTotal) || 0,
+      peakLabel: ranked[0]?.ageLabel || "н/д",
+      selected: publicContext(selectedPayload, rankMap.get(selectedPayload?.key), ranked.length),
+      topBins: Object.freeze(ranked.slice(0, 5).map((item) => publicContext(item, rankMap.get(item.key), ranked.length)))
+    });
+  }
+
+  const setPublicOption = (option, value) => {
+    const valid = {
+      view: new Set(["structure", "trend", "gap"]),
+      level: new Set(["class", "block", "code"]),
+      metric: new Set(["n", "share", "pgpzh"]),
+      ageStep: new Set(["5", "10"]),
+      labels: new Set(["major", "all", "off"])
+    };
+    const next = String(value);
+    if (option === "parentClass") {
+      if (next !== "all" && !DATA.classes[+next]) return;
+      if (String(state.pyramidParentClass) === next) return;
+      state.pyramidParentClass = next;
+      state.pyramidCause = "all";
+    } else if (option === "cause") {
+      if (next !== "all" && !causeDefinitions().some((item) => String(item.index) === next)) return;
+      if (String(state.pyramidCause) === next) return;
+      state.pyramidCause = next;
+    } else {
+      if (!valid[option]?.has(next)) return;
+      const stateKey = {
+        view: "pyramidView",
+        level: "pyramidLevel",
+        metric: "pyramidMetric",
+        ageStep: "pyramidAgeStep",
+        labels: "pyramidLabels"
+      }[option];
+      if (!stateKey || String(state[stateKey]) === next) return;
+      state[stateKey] = next;
+      if (option === "level") {
+        state.pyramidParentClass = "all";
+        state.pyramidCause = "all";
+      }
+    }
+    selectedPyramidKey = "";
+    render();
+  };
+
+  const selectPublicItem = (key) => {
+    const payload = activePyramidModel?.items.find((item) => item.key === String(key));
+    if (!payload) return;
+    selectedPyramidKey = payload.key;
+    emitContext(payload);
+    emitPyramidState();
   };
 
   const tooltipHtml = (bin, current, baseline = null) => {
@@ -311,7 +440,9 @@
     group.setAttribute("role", "button");
     group.setAttribute("aria-label", `${bin.label} лет. Мужчины: ${bin.male.n}. Женщины: ${bin.female.n}.`);
     const select = () => {
+      selectedPyramidKey = payload.key;
       emitContext(payload);
+      emitPyramidState();
     };
     group.addEventListener("mouseenter", () => group.classList.add("is-active"));
     group.addEventListener("mouseleave", () => group.classList.remove("is-active"));
@@ -375,6 +506,7 @@
     textNode(graphic, center + centerGap + halfWidth / 2, 22, "Женщины", "pyramid-sex-title is-female", "middle");
     textNode(graphic, center, 22, "Возраст", "pyramid-age-title", "middle");
 
+    const itemContexts = [];
     [...current.bins].reverse().forEach((bin, rowIndex) => {
       const y = top + rowIndex * rowHeight;
       const maleWidth = scale(bin.male.value);
@@ -405,9 +537,13 @@
         if (femaleWidth > 0) textNode(group, Math.min(width - margin, center + centerGap + femaleWidth + 7), y + 3.5, metricValue(bin.female.value), "pyramid-value-label", "start");
       }
       graphic.appendChild(group);
-      addRowInteraction(group, bin, current, baseline);
+      itemContexts.push(addRowInteraction(group, bin, current, baseline));
     });
     canvas.appendChild(graphic);
+    activePyramidModel = { current, baseline, items: itemContexts };
+    if (!itemContexts.some((item) => item.key === selectedPyramidKey)) {
+      selectedPyramidKey = [...itemContexts].sort((left, right) => right.total - left.total)[0]?.key || "";
+    }
     return root;
   };
 
@@ -419,11 +555,21 @@
     updatePyramidKpis(state.pyramidView === "trend" ? [...periodRows(firstYear), ...currentRows] : currentRows);
     els.meta.innerHTML = `<span class="chip">${state.pyramidView === "trend" ? `${firstYear} → ${lastYear}` : state.year === "all" ? `${firstYear}–${lastYear}` : state.year}</span><span class="chip">оба пола</span><span class="chip">все возрасты</span><span class="chip">${state.pyramidView === "structure" ? "структура" : state.pyramidView === "trend" ? "динамика" : "различия М / Ж"}</span><span class="chip">${esc(metricLabel())}</span>`;
     if (!current.total && !(baseline?.total)) {
+      activePyramidModel = null;
+      selectedPyramidKey = "";
       els.viz.innerHTML = '<div class="pyramid-analysis__empty">Нет данных для выбранной причины и периода.</div>';
       window.dispatchEvent(new CustomEvent("atlas:inspector-context", { detail: null }));
+      emitPyramidState();
       return;
     }
     els.viz.appendChild(renderChart(current, baseline));
     window.dispatchEvent(new CustomEvent("atlas:inspector-context", { detail: null }));
+    emitPyramidState();
   };
+
+  window.AmurPyramidAnalysis = Object.freeze({
+    getSummary: getPublicSummary,
+    setOption: setPublicOption,
+    selectItem: selectPublicItem
+  });
 })();

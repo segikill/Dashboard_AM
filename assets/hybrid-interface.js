@@ -118,7 +118,7 @@
       <div><span>Аналитический контекст</span><h3 id="hybridInspectorTitle">Текущий срез</h3></div>
       <button class="hybrid-inspector__close" type="button" aria-label="Закрыть аналитическую панель">×</button>
     </header>
-    <div class="hybrid-inspector__body"><div class="hybrid-inspector__content"></div></div>`;
+    <div class="hybrid-inspector__body"><div class="react-rank-inspector-host" data-react-rank-inspector hidden></div><div class="react-pyramid-inspector-host" data-react-pyramid-inspector hidden></div><div class="react-plot-inspector-host" data-react-plot-inspector hidden></div><div class="react-dotogram-inspector-host" data-react-dotogram-inspector hidden></div><div class="hybrid-inspector__content" data-legacy-hybrid-inspector-content></div></div>`;
   content.insertBefore(inspector, content.querySelector(":scope > .method"));
 
   const inspectorContent = inspector.querySelector(".hybrid-inspector__content");

@@ -845,6 +845,7 @@
 
     const enhanceDotogram = () => {
       if (state.view !== "dotogram") return;
+      if (window.AmurDotogramAnalysis?.restoreCached?.()) return;
       const viz = document.getElementById("viz");
       const availableWidth = Math.max(760, Math.round(viz.clientWidth - 2));
       const availableHeight = Math.max(360, Math.round(viz.clientHeight - 36));

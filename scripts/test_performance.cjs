@@ -20,18 +20,32 @@ const median = (values) => {
 
   const started = Date.now();
   await page.goto(base, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await page.waitForSelector('[data-view="map"]', { timeout: 15_000 });
+  await page.waitForSelector('[data-react-navigation-view="map"]', { timeout: 15_000 });
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const load = await page.evaluate(() => {
     const nav = performance.getEntriesByType("navigation")[0];
     const resources = performance.getEntriesByType("resource");
+    const domContentLoaded = nav.domContentLoadedEventEnd;
+    const navigationTransferBytes = nav.transferSize || 0;
+    const criticalResourceTransferBytes = resources
+      .filter((entry) => entry.responseEnd <= domContentLoaded)
+      .reduce((sum, entry) => sum + (entry.transferSize || 0), 0);
+    const resourceTransferBytes = resources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0);
     return {
-      domContentLoaded: Math.round(nav.domContentLoadedEventEnd),
-      transferBytes: resources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0),
+      domContentLoaded: Math.round(domContentLoaded),
+      navigationTransferBytes,
+      criticalResourceTransferBytes,
+      criticalTransferBytes: navigationTransferBytes + criticalResourceTransferBytes,
+      resourceTransferBytes,
+      transferBytes: navigationTransferBytes + resourceTransferBytes,
       resourceCount: resources.length,
       domNodes: document.getElementsByTagName("*").length
     };
   });
+  await page.waitForFunction(
+    () => document.querySelector("[data-react-global-filters]")?.dataset.reactStatus === "ready",
+    { timeout: 15_000 }
+  );
 
   const measureAction = async (label, selector, repeat = 3) => {
     const values = [];
@@ -66,18 +80,68 @@ const median = (values) => {
 
   const views = [];
   for (const view of ["treemap", "heatmap", "arrow", "pyramid", "plot", "dotogram"]) {
-    views.push(await measureAction(view, `[data-view="${view}"]`, 3));
+    views.push(await measureAction(view, `[data-react-navigation-view="${view}"]`, 3));
   }
 
-  await page.click('[data-view="plot"]');
+  await page.click('[data-react-navigation-view="plot"]');
   await page.waitForSelector(".plot-analysis");
   const plotControls = [];
-  for (const selector of ['[data-plot-level="code"]', '[data-plot-top="25"]', '[data-plot-view="compare"]']) {
+  for (const selector of [
+    '[data-react-plot-option="level"][data-value="code"]',
+    '[data-react-plot-option="top"][data-value="25"]',
+    '[data-react-plot-option="view"][data-value="compare"]'
+  ]) {
     plotControls.push(await measureAction(selector, selector, 3));
   }
 
+  await page.click('[data-react-navigation-view="dotogram"]');
+  await page.waitForSelector("[data-react-dotogram-controls-ready]");
+  const dotogramControls = [];
+  const measureDotogramChange = async (label, option, values) => {
+    const durations = [];
+    for (const value of values) {
+      const sample = await page.evaluate(async ({ option, value }) => {
+        const target = document.querySelector(`[data-react-dotogram-option="${option}"]`);
+        if (!target) throw new Error(`Missing Dotogram option: ${option}`);
+        const start = performance.now();
+        if (target.tagName === "SELECT") {
+          target.value = value;
+          target.dispatchEvent(new Event("change", { bubbles: true }));
+        } else {
+          document.querySelector(`[data-react-dotogram-option="${option}"][data-value="${value}"]`)?.click();
+        }
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return performance.now() - start;
+      }, { option, value });
+      durations.push(sample);
+    }
+    dotogramControls.push({
+      label,
+      medianMs: Math.round(median(durations) * 10) / 10,
+      maxMs: Math.round(Math.max(...durations) * 10) / 10
+    });
+  };
+  await measureDotogramChange("territory level", "unit", ["mo", "settlement", "mo", "settlement"]);
+  await measureDotogramChange("metric", "metric", ["per100k", "n", "median", "n"]);
+  const dotogramSelection = await page.evaluate(async () => {
+    const buttons = [...document.querySelectorAll("[data-react-dotogram-key]")].slice(0, 4);
+    const durations = [];
+    for (const button of buttons) {
+      const start = performance.now();
+      button.click();
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      durations.push(performance.now() - start);
+    }
+    return {
+      label: "territory selection",
+      medianMs: Math.round(durations.sort((a, b) => a - b)[Math.floor(durations.length / 2)] * 10) / 10,
+      maxMs: Math.round(Math.max(...durations) * 10) / 10
+    };
+  });
+  dotogramControls.push(dotogramSelection);
+
   const globalFilter = await page.evaluate(async () => {
-    const select = document.getElementById("yearSelect");
+    const select = document.querySelector("[data-react-year-filter]");
     select.value = String(DATA.years[0]);
     const start = performance.now();
     select.dispatchEvent(new Event("change", { bubbles: true }));
@@ -96,6 +160,7 @@ const median = (values) => {
     load,
     views,
     plotControls,
+    dotogramControls,
     globalFilterMs: globalFilter,
     memory,
     errors

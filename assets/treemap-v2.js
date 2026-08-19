@@ -26,6 +26,12 @@
   let lastModel = null;
   let lastModelKey = "";
   let activeModel = null;
+  let activeSelected = null;
+  let activeChildren = [];
+
+  const emitTreemapState = () => queueMicrotask(() => {
+    window.dispatchEvent(new CustomEvent("atlas:treemap-state"));
+  });
 
   const escapeHtml = (value) => esc(value);
   const numeric = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -409,7 +415,7 @@
     };
   };
 
-  const pathHtml = () => {
+  const pathParts = () => {
     const parts = [{ type: "root", label: "Все классы", current: state.treeType === "root" }];
     if (state.treeType !== "root") {
       const classIndex = state.treeType === "class"
@@ -426,11 +432,13 @@
       const block = DATA.blocks[state.treeIndex];
       parts.push({ type: "block", label: `${block?.code || ""} · ${block?.label || ""}`, current: true });
     }
-    return parts.map((part, index) => `
+    return parts;
+  };
+
+  const pathHtml = () => pathParts().map((part, index) => `
       ${index ? '<span class="treev2-chevron" aria-hidden="true">›</span>' : ""}
       <button class="treev2-crumb ${part.current ? "current" : ""}" type="button" data-tree-crumb="${part.type}" title="${escapeHtml(part.label)}">${escapeHtml(part.label)}</button>
     `).join("");
-  };
 
   const sparkline = (series, color) => {
     const width = 116;
@@ -514,10 +522,14 @@
 
   const renderInspector = (model, selected) => {
     const inspector = document.getElementById("treeInspector");
-    if (!inspector || !selected) return;
+    if (!selected) return;
     const change = selected.change;
     const changeClass = change == null ? "" : change > 0 ? "positive" : "negative";
     const children = childItemsFor(selected, model);
+    activeSelected = selected;
+    activeChildren = children;
+    if (!inspector) return;
+    if (inspector.parentElement?.classList.contains("is-react-owned")) return;
     const primary = formattedMetric(selected);
     const unit = metricUnit();
     const drill = drillLabel(selected);
@@ -575,6 +587,7 @@
       tile.setAttribute("aria-pressed", String(active));
     });
     renderInspector(model, item);
+    emitTreemapState();
   };
 
   const activateTile = (model, item) => {
@@ -655,12 +668,18 @@
       <div class="treemap-v2-layout">
         <section class="treev2-stage" aria-label="Иерархическая карта МКБ-10">
           <div class="treev2-pathbar">
-            <nav class="treev2-breadcrumbs" aria-label="Путь по иерархии МКБ-10">${pathHtml()}</nav>
-            <span class="treev2-path-help">Первый клик — сведения · повторный — открыть</span>
+            <div class="react-treemap-breadcrumbs-host" data-react-treemap-breadcrumbs hidden></div>
+            <div class="treev2-pathbar-fallback" data-legacy-treemap-breadcrumbs>
+              <nav class="treev2-breadcrumbs" aria-label="Путь по иерархии МКБ-10">${pathHtml()}</nav>
+              <span class="treev2-path-help">Первый клик — сведения · повторный — открыть</span>
+            </div>
           </div>
           <div class="treev2-canvas" id="treeCanvas"></div>
         </section>
-        <aside class="treev2-inspector" id="treeInspector" aria-label="Аналитика выбранной категории"></aside>
+        <aside class="treev2-inspector" aria-label="Аналитика выбранной категории">
+          <div class="react-treemap-inspector-host" data-react-treemap-inspector hidden></div>
+          <div class="treev2-inspector-fallback" id="treeInspector" data-legacy-treemap-inspector></div>
+        </aside>
       </div>`;
 
     document.querySelectorAll("[data-tree-crumb]").forEach((button) => {
@@ -669,7 +688,120 @@
     renderTiles(model);
     renderInspector(model, selected);
     els.meta.insertAdjacentHTML("beforeend", `<span class="chip">${state.treeType === "root" ? "1 · классы" : state.treeType === "class" ? "2 · блоки" : "3 · коды"}</span>`);
+    emitTreemapState();
   };
 
   treeItems = () => buildModel().items;
+
+  const publicItem = (item) => item ? Object.freeze({
+    key: String(item.key),
+    code: String(item.code),
+    label: String(item.label),
+    color: String(tileColor(item, Math.max(...(activeModel || buildModel()).items.map((entry) => entry.n), 1))),
+    entityType: String(item.entityType),
+    metricValue: String(formattedMetric(item)),
+    metricUnit: String(metricUnit()),
+    deaths: numeric(item.n),
+    share: numeric(item.share),
+    rate: item.rate == null ? null : numeric(item.rate),
+    medianAge: item.median == null ? null : numeric(item.median),
+    pgpzh75: numeric(item.pgpzh),
+    change: item.change == null ? null : numeric(item.change),
+    series: Object.freeze([...(item.series || [])].map(numeric)),
+    drillLabel: drillLabel(item)
+  }) : null;
+
+  const getPublicSummary = () => {
+    const model = activeModel || buildModel();
+    const selected = activeSelected?.key === selectedKey
+      ? activeSelected
+      : model.items.find((item) => item.key === selectedKey) || model.items[0] || null;
+    const childSource = activeSelected?.key === selected?.key
+      ? activeChildren
+      : selected ? childItemsFor(selected, model) : [];
+    const children = childSource.slice(0, 6).map(publicItem);
+    return Object.freeze({
+      active: state.view === "treemap",
+      level: String(state.treeType),
+      metric: String(state.treeMetric),
+      color: String(state.treeColor),
+      sort: String(state.treeSort),
+      showValues: Boolean(state.treeShowValues),
+      minShare: numeric(state.treeMinShare),
+      contextLabel: hierarchyContext(),
+      breadcrumbs: Object.freeze(pathParts().map((part) => Object.freeze({
+        level: String(part.type),
+        label: String(part.label),
+        current: Boolean(part.current)
+      }))),
+      selected: publicItem(selected),
+      children: Object.freeze(children)
+    });
+  };
+
+  const setPublicOption = (option, value) => {
+    const property = {
+      metric: "treeMetric",
+      color: "treeColor",
+      sort: "treeSort",
+      showValues: "treeShowValues",
+      minShare: "treeMinShare"
+    }[option];
+    if (!property) return;
+    const valid = {
+      metric: new Set(["n", "share", "pgpzh", "rate"]),
+      color: new Set(["count", "change", "age"]),
+      sort: new Set(["value", "name", "change"])
+    }[option];
+    let next = value;
+    if (valid && !valid.has(String(value))) return;
+    if (option === "showValues") next = Boolean(value);
+    if (option === "minShare") next = Math.max(0, Math.min(3, numeric(value)));
+    if (state[property] === next) return;
+    state[property] = next;
+    lastModel = null;
+    if (option === "showValues") renderTreemap();
+    else render();
+  };
+
+  const resetPublic = () => {
+    state.treeType = "root";
+    state.treeIndex = -1;
+    state.treeMetric = "n";
+    state.treeColor = "count";
+    state.treeSort = "value";
+    state.treeShowValues = true;
+    state.treeMinShare = .5;
+    selectedKey = "";
+    pendingSelectionKey = "";
+    resetTileClick();
+    lastModel = null;
+    render();
+  };
+
+  const selectPublicChild = (key) => {
+    const model = activeModel || buildModel();
+    const selected = model.items.find((item) => item.key === selectedKey) || model.items[0];
+    if (!selected) return;
+    const child = childItemsFor(selected, model).find((item) => item.key === key);
+    if (!child) return;
+    if (selected.entityType === "class" || selected.entityType === "block") {
+      openItem(selected, child.key);
+      return;
+    }
+    selectItemInCurrentView(model, child);
+  };
+
+  window.AmurTreemapV2 = Object.freeze({
+    getSummary: getPublicSummary,
+    setOption: setPublicOption,
+    setLevel: goToLevel,
+    reset: resetPublic,
+    drill: () => {
+      const model = activeModel || buildModel();
+      const selected = model.items.find((item) => item.key === selectedKey) || model.items[0];
+      openItem(selected);
+    },
+    selectChild: selectPublicChild
+  });
 })();

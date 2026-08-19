@@ -20,6 +20,7 @@
   const baseLocalControls = localControls;
   let selectedKey = "";
   let selectedPayload = null;
+  let activeRankModel = null;
 
   const number = (value, digits = 0) => new Intl.NumberFormat("ru-RU", {
     maximumFractionDigits: digits,
@@ -175,10 +176,27 @@
           : "Выбранный показатель не изменился.";
     return {
       key: definition.key,
+      code: definition.code,
+      label: definition.label,
+      color: definition.color,
       title: `${definition.code} · ${definition.label}`,
       subtitle: `${labels[0]} → ${labels[labels.length - 1]} · ${metricLabel()}`,
       primary: { label: `${labels[labels.length - 1]} · ${metricLabel()}`, value: formatMetric(last.value) },
       change: { value: signed(relative, "%") },
+      rankDelta,
+      relativeDelta: relative,
+      valueDelta,
+      shareDelta,
+      rankBefore: first.rank,
+      rankAfter: last.rank,
+      valueBefore: first.value,
+      valueAfter: last.value,
+      valueBeforeText: formatMetric(first.value),
+      valueAfterText: formatMetric(last.value),
+      shareBefore: first.share,
+      shareAfter: last.share,
+      medianAge: last.median,
+      pgpzh75: last.pgpzh,
       metrics: [
         { label: "Изменение ранга", value: rankDelta === 0 ? "без изменения" : `${rankDelta > 0 ? "↑" : "↓"} ${Math.abs(rankDelta)}`, className: tone.className },
         { label: `${labels[0]} → ${labels[labels.length - 1]}`, value: `${first.rank} → ${last.rank} место` },
@@ -200,6 +218,7 @@
   const emitContext = (payload) => {
     selectedPayload = payload;
     window.dispatchEvent(new CustomEvent("atlas:inspector-context", { detail: payload }));
+    window.dispatchEvent(new CustomEvent("atlas:rank-state"));
   };
 
   const tooltipHtml = (definition, series, labels) => {
@@ -220,6 +239,7 @@
 
   const attachTrajectoryInteraction = (root, group, definition, series, labels) => {
     group.dataset.inspectorManaged = "true";
+    group.dataset.rankKey = definition.key;
     group.setAttribute("tabindex", "0");
     group.setAttribute("role", "button");
     group.setAttribute("aria-label", `${definition.code}. ${definition.label}. ${labels[0]}: ${series[0].rank} место. ${labels[labels.length - 1]}: ${series[series.length - 1].rank} место.`);
@@ -315,6 +335,7 @@
     textNode(graphic, x2, 34, slices[1].note, "rank-column-subtitle", "middle");
     [x1, x2].forEach((x) => graphic.appendChild(svg("line", { x1: x, y1: 43, x2: x, y2: height - 10, class: "rank-guide" })));
     let firstPayload = null;
+    const contexts = [];
     rankedItems.forEach(({ definition, series }) => {
       const y1 = y(leftPosition.get(definition.key));
       const y2 = y(rightPosition.get(definition.key));
@@ -338,9 +359,11 @@
       deltaText.setAttribute("fill", tone.color);
       graphic.appendChild(group);
       const payload = attachTrajectoryInteraction(graphic, group, definition, series, slices.map((slice) => slice.label));
+      contexts.push(payload);
       if (!firstPayload) firstPayload = payload;
     });
     canvas.appendChild(graphic);
+    activeRankModel = Object.freeze({ labels: Object.freeze(slices.map((slice) => slice.label)), items: Object.freeze(contexts) });
     return { root, firstPayload };
   };
 
@@ -393,6 +416,7 @@
       textNode(graphic, xpos, 22, year, "rank-year-label", "middle");
     });
     let firstPayload = null;
+    const contexts = [];
     rankedItems.forEach(({ definition, series }) => {
       const delta = series[0].rank - series[series.length - 1].rank;
       const tone = movementTone(delta);
@@ -412,9 +436,11 @@
       textNode(group, points[points.length - 1][0] + 10, points[points.length - 1][1] + 10, formatMetric(series[series.length - 1].value), "rank-label-value", "start");
       graphic.appendChild(group);
       const payload = attachTrajectoryInteraction(graphic, group, definition, series, years.map(String));
+      contexts.push(payload);
       if (!firstPayload) firstPayload = payload;
     });
     canvas.appendChild(graphic);
+    activeRankModel = Object.freeze({ labels: Object.freeze(years.map(String)), items: Object.freeze(contexts) });
     return { root, firstPayload };
   };
 
@@ -464,6 +490,107 @@
     });
   };
 
+  const publicContext = (payload) => payload ? Object.freeze({
+    key: payload.key,
+    code: payload.code,
+    label: payload.label,
+    color: payload.color,
+    title: payload.title,
+    subtitle: payload.subtitle,
+    primaryLabel: payload.primary.label,
+    primaryValue: payload.primary.value,
+    changeValue: payload.change.value,
+    rankDelta: payload.rankDelta,
+    relativeDelta: payload.relativeDelta,
+    valueDelta: payload.valueDelta,
+    shareDelta: payload.shareDelta,
+    rankBefore: payload.rankBefore,
+    rankAfter: payload.rankAfter,
+    valueBefore: payload.valueBefore,
+    valueAfter: payload.valueAfter,
+    valueBeforeText: payload.valueBeforeText,
+    valueAfterText: payload.valueAfterText,
+    shareBefore: payload.shareBefore,
+    shareAfter: payload.shareAfter,
+    medianAge: payload.medianAge,
+    pgpzh75: payload.pgpzh75,
+    insight: payload.insight
+  }) : null;
+
+  const getPublicSummary = () => {
+    const items = activeRankModel?.items || [];
+    const selected = items.find((item) => item.key === selectedKey) || selectedPayload || items[0] || null;
+    const movers = [...items]
+      .sort((left, right) => Math.abs(right.rankDelta) - Math.abs(left.rankDelta)
+        || Math.abs(right.relativeDelta || 0) - Math.abs(left.relativeDelta || 0)
+        || left.rankAfter - right.rankAfter)
+      .slice(0, 6)
+      .map(publicContext);
+    return Object.freeze({
+      active: state.view === "arrow",
+      view: state.rankView,
+      compare: state.rankCompare,
+      level: state.rankLevel,
+      classIndex: String(state.rankClass),
+      metric: state.rankMetric,
+      top: String(state.rankTop),
+      onlyChanges: state.rankOnlyChanges === "1",
+      itemCount: items.length,
+      slices: Object.freeze([...(activeRankModel?.labels || [])]),
+      classOptions: Object.freeze(DATA.classes.map((definition, index) => Object.freeze({
+        value: String(index),
+        label: `${definition.roman}. ${definition.short}`
+      }))),
+      selected: publicContext(selected),
+      movers: Object.freeze(movers)
+    });
+  };
+
+  const setPublicOption = (option, value) => {
+    if (state.view !== "arrow") return;
+    const next = String(value);
+    const valid = {
+      view: new Set(["compare", "trend"]),
+      compare: new Set(["time", "sex"]),
+      level: new Set(["class", "block", "code"]),
+      metric: new Set(["n", "share", "pgpzh"]),
+      top: new Set(["10", "15", "20"]),
+      onlyChanges: new Set(["0", "1"])
+    };
+    if (option === "classIndex") {
+      if (next !== "all" && !DATA.classes[Number(next)]) return;
+      state.rankClass = next;
+    } else {
+      const stateKey = {
+        view: "rankView",
+        compare: "rankCompare",
+        level: "rankLevel",
+        metric: "rankMetric",
+        top: "rankTop",
+        onlyChanges: "rankOnlyChanges"
+      }[option];
+      if (!stateKey || !valid[option]?.has(next)) return;
+      state[stateKey] = next;
+      if (option === "level" && next === "class") state.rankClass = "all";
+    }
+    selectedKey = "";
+    selectedPayload = null;
+    render();
+  };
+
+  const selectPublicItem = (key) => {
+    if (state.view !== "arrow") return;
+    const target = [...document.querySelectorAll(".rank-trajectory")]
+      .find((item) => item.dataset.rankKey === String(key));
+    target?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  };
+
+  window.AmurRankAnalysis = Object.freeze({
+    getSummary: getPublicSummary,
+    setOption: setPublicOption,
+    selectItem: selectPublicItem
+  });
+
   localControls = () => {
     els.viz.classList.toggle("rank-analysis-host", state.view === "arrow");
     if (state.view !== "arrow") {
@@ -477,8 +604,11 @@
     state.arrowMode = state.rankCompare;
     const result = state.rankView === "trend" ? bumpChart() : compareChart();
     if (!result) {
+      activeRankModel = null;
+      selectedPayload = null;
       els.viz.innerHTML = '<div class="rank-analysis__empty">Нет данных для построения рейтинга при выбранных фильтрах.</div>';
       window.dispatchEvent(new CustomEvent("atlas:inspector-context", { detail: null }));
+      window.dispatchEvent(new CustomEvent("atlas:rank-state"));
       return;
     }
     els.viz.appendChild(result.root);

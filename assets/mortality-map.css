@@ -40,6 +40,105 @@
   box-shadow: 0 4px 16px rgba(31, 56, 78, .06);
 }
 
+.legacy-mortality-map-toolbar,
+.react-map-chrome-host,
+.react-map-chrome {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.legacy-mortality-map-toolbar > div,
+.react-map-chrome__title {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.react-map-chrome-host[hidden],
+.react-map-inspector-host[hidden],
+.mortality-map-toolbar.is-react-owned > [data-legacy-map-chrome],
+.mortality-map-toolbar.is-react-owned > [data-legacy-map-inspector-toggle] {
+  display: none !important;
+}
+
+.react-map-chrome__main,
+.react-map-chrome__actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.react-map-chrome__title b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.react-map-chrome__toggle[aria-pressed="true"] {
+  border-color: #6f9bc0;
+  background: #eaf3fa;
+  color: #173f60;
+}
+
+.react-map-chrome__glyph {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.react-map-inspector-host {
+  margin: -4px -4px 12px;
+}
+
+.react-map-inspector {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 2px 10px;
+  border-bottom: 1px solid #dce5ec;
+}
+
+.react-map-inspector__copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.react-map-inspector__copy span {
+  color: #718497;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.react-map-inspector__copy b {
+  overflow: hidden;
+  color: #17304b;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.react-map-inspector button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #c8d7e4;
+  border-radius: 8px;
+  background: #fff;
+  color: #31536f;
+  cursor: pointer;
+  font-weight: 900;
+}
+
 .mortality-map-toolbar > div {
   display: grid;
   min-width: 0;
@@ -221,6 +320,31 @@
 
   .mortality-map-side {
     padding: 16px;
+  }
+}
+
+@media (min-width: 1541px) {
+  body.shell-inspector-collapsed .mortality-map-shell {
+    grid-template-columns: minmax(0, 1fr) 0;
+  }
+
+  body.shell-inspector-collapsed .mortality-map-side {
+    visibility: hidden;
+    padding-right: 0;
+    padding-left: 0;
+    border-left: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .react-map-chrome__title span {
+    display: none;
+  }
+
+  .react-map-chrome__toggle .react-map-chrome__label {
+    display: none;
   }
 }
 

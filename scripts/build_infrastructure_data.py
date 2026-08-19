@@ -70,9 +70,21 @@ def parse_args() -> argparse.Namespace:
 def load_atlas_data(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     match = re.search(r"const DATA=(.*?);\s*\r?\nconst NF=", text, flags=re.S)
-    if not match:
-        raise ValueError(f"Could not find embedded DATA in {path}")
-    return json.loads(match.group(1))
+    if match:
+        return json.loads(match.group(1))
+
+    external_path = path.parent / "data" / "atlas-data.js"
+    if external_path.exists():
+        external_text = external_path.read_text(encoding="utf-8")
+        external_match = re.search(
+            r"window\.AMUR_ATLAS_DATA=(.*);\s*$", external_text, flags=re.S
+        )
+        if external_match:
+            return json.loads(external_match.group(1))
+
+    raise ValueError(
+        f"Could not find embedded or external atlas DATA for {path}"
+    )
 
 
 def round_geometry(value: Any, precision: int = 6) -> Any:

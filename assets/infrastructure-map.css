@@ -156,6 +156,65 @@ body.infrastructure-view .atlas-main .method {
   line-height: 1;
 }
 
+.react-infra-panel-host {
+  width: 100%;
+  min-width: 0;
+}
+
+.react-infra-panel-host[hidden],
+.react-infra-chrome-host[hidden],
+.infra-panel-head.is-react-owned > [data-legacy-infra-panel],
+.infra-panel-head.is-react-owned > [data-legacy-infra-panel-toggle],
+.infra-map-toolbar.is-react-owned > [data-legacy-infra-chrome] {
+  display: none !important;
+}
+
+.react-infra-panel-header {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+}
+
+.react-infra-panel-header > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.react-infra-panel-header span {
+  color: #718497;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.react-infra-panel-header h3 {
+  margin: 0;
+  color: #17304b;
+  font-size: 14px;
+  line-height: 1.15;
+}
+
+.react-infra-panel-header button {
+  display: grid;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #cddae5;
+  border-radius: 9px;
+  background: #fff;
+  color: #28546f;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+
 .infra-shell.is-panel-collapsed .infra-panel-head {
   justify-content: center;
   padding: 10px 7px;
@@ -796,6 +855,50 @@ body.infrastructure-view .atlas-main .method {
   backdrop-filter: blur(9px);
 }
 
+.react-infra-chrome-host,
+.react-infra-map-chrome,
+.legacy-infra-map-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.react-infra-map-chrome__title,
+.legacy-infra-map-toolbar > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.react-infra-map-chrome__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.react-infra-map-chrome button {
+  padding: 5px 8px;
+  border: 1px solid #cbd8e2;
+  border-radius: 7px;
+  background: #f8fafb;
+  color: #315c74;
+  cursor: pointer;
+  font-size: 8.5px;
+  font-weight: 900;
+}
+
+.react-infra-map-chrome button[aria-pressed="true"] {
+  border-color: #6f9bc0;
+  background: #e8f2f8;
+  color: #173f60;
+}
+
+.react-infra-map-chrome__glyph {
+  margin-right: 3px;
+  font-size: 11px;
+}
+
 .infra-map-toolbar b,
 .infra-map-toolbar span {
   display: block;
@@ -1097,6 +1200,13 @@ body.infrastructure-view .atlas-main .method {
 
   .infra-layer-card {
     padding: 6px 4px;
+  }
+}
+
+@media (max-width: 900px) {
+  .react-infra-map-chrome__title span,
+  .react-infra-map-chrome__label {
+    display: none;
   }
 }
 

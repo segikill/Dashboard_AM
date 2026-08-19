@@ -51,16 +51,16 @@ let browser;
   await page.waitForTimeout(80);
   const selected = await page.evaluate(() => ({
     cause: state.plotCause,
-    action: document.querySelector(".hybrid-inspector__action")?.textContent,
-    inspector: document.querySelector(".hybrid-inspector__selection h4")?.textContent,
-    metrics: document.querySelectorAll(".hybrid-inspector__metric").length,
+    action: document.querySelector("[data-react-plot-action=\"distribution\"]")?.textContent,
+    inspector: document.querySelector(".react-plot-selection h4")?.textContent,
+    metrics: document.querySelectorAll(".react-plot-metrics > div").length,
     persistent: document.querySelectorAll(".plot-cause-row.is-selected").length
   }));
   if (selected.cause === "all" || !selected.action?.includes("распределение") || !selected.inspector || selected.metrics < 4 || selected.persistent !== 1) {
     throw new Error(`Profile selection failed: ${JSON.stringify(selected)}`);
   }
 
-  await page.click(".hybrid-inspector__action");
+  await page.click('[data-react-plot-action="distribution"]');
   await page.waitForSelector(".plot-analysis--distribution .plot-density-area");
   const distribution = await page.evaluate(() => ({
     mode: state.plotView,
@@ -80,7 +80,7 @@ let browser;
   if (distribution.causeSelect !== distribution.cause || !distribution.footnote.includes("медиана")) throw new Error(`Distribution context failed: ${JSON.stringify(distribution)}`);
   await page.screenshot({ path: path.join(artifacts, "plot-distribution-1600x900.png"), fullPage: false });
 
-  await page.click('[data-plot-view="compare"]');
+  await page.click('[data-react-plot-option="view"][data-value="compare"]');
   await page.waitForSelector(".plot-analysis--compare .plot-cause-row");
   const timeCompare = await page.evaluate(() => ({
     mode: state.plotView,
@@ -97,7 +97,7 @@ let browser;
   }
   if (!timeCompare.yearDisabled || timeCompare.sexDisabled) throw new Error(`Time comparison filters failed: ${JSON.stringify(timeCompare)}`);
 
-  await page.selectOption("#plotCompare", "sex");
+  await page.selectOption('[data-react-plot-option="compare"]', "sex");
   const sexCompare = await page.evaluate(() => ({
     compare: state.plotCompare,
     yearDisabled: document.getElementById("yearSelect")?.disabled,
@@ -110,9 +110,9 @@ let browser;
   }
   await page.screenshot({ path: path.join(artifacts, "plot-compare-1600x900.png"), fullPage: false });
 
-  await page.click('.plot-workspace-tabs [data-plot-view="profile"]');
-  await page.click('[data-plot-level="block"]');
-  await page.waitForSelector("#plotClass");
+  await page.click('[data-react-plot-option="view"][data-value="profile"]');
+  await page.click('[data-react-plot-option="level"][data-value="block"]');
+  await page.waitForSelector('[data-react-plot-option="classIndex"]');
   const blockLabels = await page.evaluate(() => {
     const labels = [...document.querySelectorAll(".plot-row-label")];
     const boxes = labels.map((label) => label.getBBox());
@@ -130,7 +130,7 @@ let browser;
     throw new Error(`Block labels overflow: ${JSON.stringify(blockLabels)}`);
   }
   await page.screenshot({ path: path.join(artifacts, "plot-profile-block-labels-1600x900.png"), fullPage: false });
-  await page.click('[data-plot-view="compare"]');
+  await page.click('[data-react-plot-option="view"][data-value="compare"]');
   const comparisonBlockLabels = await page.evaluate(() => {
     const labels = [...document.querySelectorAll(".plot-row-label")];
     const boxes = labels.map((label) => label.getBBox());
@@ -158,8 +158,8 @@ let browser;
   await page.screenshot({ path: path.join(artifacts, "plot-compare-block-labels-2560x1440.png"), fullPage: false });
   await page.setViewportSize(viewports[0]);
   await page.waitForTimeout(220);
-  await page.click('[data-plot-view="profile"]');
-  await page.selectOption("#plotClass", "1");
+  await page.click('[data-react-plot-option="view"][data-value="profile"]');
+  await page.selectOption('[data-react-plot-option="classIndex"]', "1");
   const detail = await page.evaluate(() => ({
     mode: state.plotView,
     level: state.plotLevel,
@@ -169,7 +169,7 @@ let browser;
   }));
   if (detail.level !== "block" || detail.classKey !== "1" || !detail.rows) throw new Error(`Block detail failed: ${JSON.stringify(detail)}`);
 
-  await page.click('[data-plot-level="class"]');
+  await page.click('[data-react-plot-option="level"][data-value="class"]');
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     await page.waitForTimeout(180);
@@ -189,7 +189,7 @@ let browser;
   }
 
   await page.setViewportSize({ width: 1366, height: 768 });
-  await page.click('[data-plot-top="25"]');
+  await page.click('[data-react-plot-option="top"][data-value="25"]');
   const dense = await page.evaluate(() => {
     const canvas = document.querySelector(".plot-analysis__canvas");
     return {

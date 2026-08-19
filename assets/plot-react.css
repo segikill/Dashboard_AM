@@ -1,0 +1,108 @@
+/* React controls and inspector for the age-at-death view. SVG stays in plot-analysis.js. */
+.react-plot-controls-host[hidden],
+.react-plot-inspector-host[hidden] { display: none !important; }
+
+.drawer-scroll.is-react-plot-owned > [data-legacy-local-controls],
+.hybrid-inspector__body.is-react-plot-owned > [data-legacy-hybrid-inspector-content] { display: none !important; }
+
+.drawer-scroll.is-react-plot-owned > .react-plot-controls-host,
+.hybrid-inspector__body.is-react-plot-owned > .react-plot-inspector-host { display: block; min-width: 0; }
+.hybrid-inspector__body.is-react-plot-owned { padding: 8px; }
+body.plot-react-owned .plot-workspace-tabs { display: none; }
+body.plot-react-owned .plot-analysis { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+
+.react-plot-controls { display: grid; gap: 9px; padding-top: 10px; border-top: 1px dashed #d8dfeb; }
+.react-plot-mode,
+.react-plot-choice,
+.react-plot-field { display: grid; min-width: 0; gap: 4px; }
+.react-plot-mode > span,
+.react-plot-choice > span,
+.react-plot-field > span { color: #47536a; font-size: 8px; font-weight: 900; }
+
+.react-plot-mode > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+.react-plot-mode button {
+  display: grid; min-width: 0; min-height: 44px; align-content: center; gap: 2px; padding: 5px 3px;
+  border: 1px solid #d5deea; border-radius: 9px; background: #f8fafc; color: #526178; cursor: pointer; text-align: center;
+  transition: border-color .14s ease, background .14s ease, color .14s ease, transform .14s ease;
+}
+.react-plot-mode button:hover { border-color: #8eb2d3; background: #f1f6fb; }
+.react-plot-mode button:active { transform: translateY(1px); }
+.react-plot-mode button.is-active { border-color: #2f75b8; background: linear-gradient(135deg, #1f669f, #347fc0); color: #fff; box-shadow: 0 5px 13px rgba(38,101,155,.18); }
+.react-plot-mode button b,
+.react-plot-mode button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.react-plot-mode button b { font-size: 7.4px; }
+.react-plot-mode button small { opacity: .78; font-size: 5.7px; }
+
+.react-plot-choice > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
+.react-plot-choice button {
+  min-width: 0; min-height: 30px; padding: 5px 3px; border: 1px solid #d5deea; border-radius: 8px;
+  background: #f8fafc; color: #53637a; cursor: pointer; font-size: 7.4px; font-weight: 850;
+}
+.react-plot-choice button:hover { border-color: #91b3d2; }
+.react-plot-choice button.is-active { border-color: #2f75b8; background: #e8f2fd; color: #155594; box-shadow: inset 0 0 0 1px rgba(47,117,184,.1); }
+.react-plot-choice[data-columns="2"] > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.react-plot-field select {
+  width: 100%; min-height: 34px; padding: 7px 8px; border: 1px solid #cfd9e6; border-radius: 8px;
+  background: #fff; color: #172f4b; font-size: 9px;
+}
+.react-plot-fields-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.react-plot-note { margin: 0; padding: 8px 9px; border-left: 3px solid #3b7eb9; border-radius: 8px; background: #eef5fb; color: #4a617a; font-size: 7.5px; line-height: 1.4; }
+
+.react-plot-inspector { display: grid; min-width: 0; gap: 8px; animation: hybrid-panel-in 180ms cubic-bezier(.2,.8,.2,1) both; }
+.react-plot-card { min-width: 0; padding: 9px; border: 1px solid #dce5ed; border-radius: 11px; background: #fff; }
+.react-plot-kicker { display: block; margin-bottom: 5px; color: #74879b; font-size: 7px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.react-plot-selection h4 { margin: 0; overflow-wrap: anywhere; color: #17324d; font-size: 11.5px; line-height: 1.25; }
+.react-plot-selection > p { margin: 4px 0 0; color: #718096; font-size: 7.5px; line-height: 1.35; }
+.react-plot-primary { display: grid; margin-top: 11px; }
+.react-plot-primary strong { color: #153f6d; font-size: 22px; line-height: 1; }
+.react-plot-primary span { margin-top: 3px; color: #718096; font-size: 7.5px; }
+.react-plot-change { display: flex; align-items: center; justify-content: space-between; gap: 7px; margin-top: 8px; padding: 6px 7px; border-radius: 8px; background: #f3f5f8; color: #68788b; font-size: 8px; }
+.react-plot-change.is-later { background: #fff3e9; color: #a45e23; }
+.react-plot-change.is-earlier { background: #edf5fc; color: #286ca4; }
+
+.react-plot-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.react-plot-metrics > div { min-width: 0; padding: 7px; border-radius: 8px; background: #f3f6f9; }
+.react-plot-metrics span { display: block; color: #75869a; font-size: 6.8px; line-height: 1.2; }
+.react-plot-metrics b { display: block; margin-top: 3px; overflow: hidden; color: #203b58; font-size: 8.5px; text-overflow: ellipsis; white-space: nowrap; }
+.react-plot-insight { margin: 0; padding: 8px; border-left: 3px solid #e2a328; border-radius: 8px; background: #fff8e8; color: #5d5133; font-size: 8px; line-height: 1.45; }
+.react-plot-details { display: grid; gap: 4px; margin: 0; }
+.react-plot-details > div { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; align-items: baseline; }
+.react-plot-details dt { min-width: 0; color: #718096; font-size: 7px; }
+.react-plot-details dd { margin: 0; color: #263f5a; font-size: 7.5px; font-weight: 850; text-align: right; }
+.react-plot-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.react-plot-card-head b { color: #718096; font-size: 7px; }
+
+.react-plot-top { display: grid; gap: 4px; }
+.react-plot-top button {
+  display: grid; min-width: 0; grid-template-columns: 5px minmax(0,1fr) auto; gap: 6px; align-items: center;
+  padding: 6px 7px; border: 1px solid #e0e7ef; border-radius: 8px; background: #fbfcfe; color: #31475f; cursor: pointer; text-align: left;
+}
+.react-plot-top button:hover,
+.react-plot-top button.is-selected { border-color: #87aac9; background: #f1f6fb; }
+.react-plot-top button > i { width: 5px; height: 26px; border-radius: 99px; }
+.react-plot-top button span { display: grid; min-width: 0; }
+.react-plot-top button b { font-size: 8px; }
+.react-plot-top button small { overflow: hidden; color: #718096; font-size: 6.6px; text-overflow: ellipsis; white-space: nowrap; }
+.react-plot-top button strong { color: #173f6c; font-size: 8px; }
+.react-plot-action { width: 100%; min-height: 34px; border: 0; border-radius: 9px; background: linear-gradient(135deg,#1f669f,#347fc0); color: #fff; cursor: pointer; font-size: 8px; font-weight: 850; box-shadow: 0 5px 13px rgba(38,101,155,.18); }
+
+@media (max-width: 1440px) {
+  .react-plot-fields-row { grid-template-columns: 1fr; }
+  .react-plot-mode button b { font-size: 6.8px; }
+  .react-plot-choice button { font-size: 6.9px; }
+}
+
+@media (min-width: 2200px) {
+  .react-plot-mode button b,
+  .react-plot-field select,
+  .react-plot-metrics b { font-size: 10.5px; }
+  .react-plot-mode button small { font-size: 7px; }
+  .react-plot-selection h4 { font-size: 14px; }
+  .react-plot-primary strong { font-size: 28px; }
+  .react-plot-card { padding: 11px; }
+}
+
+body[data-motion="off"] .react-plot-mode button,
+body[data-motion="off"] .react-plot-inspector { transition: none !important; animation: none !important; }
+

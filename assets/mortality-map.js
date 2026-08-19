@@ -204,16 +204,20 @@
     <div class="mortality-map-shell">
       <section class="mortality-map-column">
         <header class="mortality-map-toolbar">
-          <div>
-            <span>Тематическая WebGL-карта</span>
-            <b>Смертность по территориям</b>
+          <div class="react-map-chrome-host" data-react-map-chrome hidden></div>
+          <div class="legacy-mortality-map-toolbar" data-legacy-map-chrome>
+            <div>
+              <span>Тематическая WebGL-карта</span>
+              <b>Смертность по территориям</b>
+            </div>
+            <button type="button" data-mortality-fit>Весь регион</button>
           </div>
-          <button type="button" data-mortality-fit>Весь регион</button>
         </header>
         <div class="mortality-map" role="application" aria-label="Интерактивная карта смертности Амурской области"></div>
         <div class="mortality-map-status" hidden></div>
       </section>
       <aside class="map-side mortality-map-side">
+        <div class="react-map-inspector-host" data-react-map-inspector hidden></div>
         <div class="map-legend"></div>
         <section class="site-map-selection-card" hidden></section>
         <h3>Наибольшие значения</h3>
@@ -314,6 +318,7 @@
     pinnedPopup = null;
     applySelectionLayers();
     renderSelectionCard();
+    window.dispatchEvent(new CustomEvent("atlas:mortality-selection", { detail: null }));
   };
 
   const extendBounds = (coordinates, bounds) => {
@@ -352,6 +357,9 @@
     pendingSelection = null;
     applySelectionLayers();
     renderSelectionCard();
+    window.dispatchEvent(new CustomEvent("atlas:mortality-selection", {
+      detail: { kind: normalizedKind, id: numericId }
+    }));
     if (options.fly !== false) flyToFeature(normalizedKind, numericId);
   };
 

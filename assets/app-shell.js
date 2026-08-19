@@ -44,10 +44,17 @@
 
     const context = document.createElement("div");
     context.className = "app-header-context";
+    context.dataset.legacyHeaderStatus = "";
     context.innerHTML = `
       <span class="app-header-pill">Период <b id="appHeaderPeriod">${escapeHtml(DATA.period || "2023–2025")}</b></span>
       <span class="app-header-pill">Данные <b>готовы</b></span>`;
     title?.insertAdjacentElement("afterend", context);
+
+    const reactHeaderHost = document.createElement("div");
+    reactHeaderHost.className = "react-header-status-host";
+    reactHeaderHost.dataset.reactHeaderStatus = "";
+    reactHeaderHost.hidden = true;
+    context.insertAdjacentElement("beforebegin", reactHeaderHost);
 
     const kpi = document.querySelector(".atlas-main .kpi");
     if (kpi) {
@@ -57,6 +64,7 @@
 
     const actions = document.createElement("div");
     actions.className = "app-header-actions";
+    actions.dataset.legacyHeaderActions = "";
 
     const actionBox = document.querySelector(".atlas-actions")?.parentElement;
     if (actionBox) {
@@ -124,6 +132,7 @@
     const button = document.createElement("button");
     button.type = "button";
     button.className = "shell-inspector-toggle";
+    button.dataset.legacyMapInspectorToggle = "";
     button.textContent = "Легенда";
     button.setAttribute("aria-expanded", String(body.classList.contains("shell-inspector-open")));
     button.addEventListener("click", () => {

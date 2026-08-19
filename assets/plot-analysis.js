@@ -25,6 +25,11 @@
   const baseLocalControls = localControls;
   const firstYear = Math.min(...DATA.years);
   const lastYear = Math.max(...DATA.years);
+  let activePlotContext = null;
+  let activePlotItems = [];
+  let activePlotSliceLabels = [];
+
+  const emitPlotState = () => window.dispatchEvent(new CustomEvent("atlas:plot-state", { detail: getPublicSummary() }));
 
   const number = (value, digits = 0) => new Intl.NumberFormat("ru-RU", {
     minimumFractionDigits: digits,
@@ -72,6 +77,16 @@
       classIndex: index,
       color: definition.color
     }));
+  };
+
+  const publicClassOptions = DATA.classes.map((item, index) => ({ value: String(index), label: `${item.roman}. ${item.short}` }));
+  const publicCauseOptionsCache = new Map();
+  const publicCauseOptions = () => {
+    const key = `${state.plotLevel}|${state.plotClass}`;
+    if (!publicCauseOptionsCache.has(key)) {
+      publicCauseOptionsCache.set(key, definitions().map((item) => ({ value: String(item.index), label: `${item.code} · ${item.label}` })));
+    }
+    return publicCauseOptionsCache.get(key);
   };
 
   const rowIndex = (row) => state.plotLevel === "class"
@@ -224,7 +239,58 @@
     document.getElementById("kpiLead").textContent = lead >= 0 ? DATA.classes[lead].roman : "н/д";
   };
 
-  const emitContext = (payload) => window.dispatchEvent(new CustomEvent("atlas:inspector-context", { detail: payload }));
+  const contextToPublic = (payload) => payload ? {
+    key: String(payload.key || ""),
+    title: String(payload.title || ""),
+    subtitle: String(payload.subtitle || ""),
+    primaryLabel: String(payload.primary?.label || ""),
+    primaryValue: String(payload.primary?.value || ""),
+    changeValue: payload.change?.value == null ? "" : String(payload.change.value),
+    metrics: (payload.metrics || []).slice(0, 6).map((item) => ({ label: String(item.label || ""), value: String(item.value || "") })),
+    details: (payload.details || []).slice(0, 7).map((item) => ({ label: String(item.label || ""), value: String(item.value || "") })),
+    insight: String(payload.insight || ""),
+    action: payload.action ? {
+      id: String(payload.action.id || ""),
+      label: String(payload.action.label || ""),
+      cause: String(payload.action.cause || ""),
+      level: String(payload.action.level || "")
+    } : null
+  } : null;
+
+  const emitContext = (payload) => {
+    activePlotContext = contextToPublic(payload);
+    window.dispatchEvent(new CustomEvent("atlas:inspector-context", { detail: payload }));
+    emitPlotState();
+  };
+
+  const itemToPublic = (item, rank) => ({
+    key: `${state.plotLevel}:${item.index}`,
+    index: Number(item.index),
+    code: String(item.code || ""),
+    label: String(item.label || ""),
+    color: String(item.color || "#527da4"),
+    n: Number(item.n || 0),
+    median: Number(item.median ?? item.second?.median ?? 0),
+    q1: Number(item.q1 ?? item.second?.q1 ?? 0),
+    q3: Number(item.q3 ?? item.second?.q3 ?? 0),
+    p10: Number(item.p10 ?? item.second?.p10 ?? 0),
+    p90: Number(item.p90 ?? item.second?.p90 ?? 0),
+    min: Number(item.min ?? item.second?.min ?? 0),
+    max: Number(item.max ?? item.second?.max ?? 0),
+    iqr: Number(item.iqr ?? item.second?.iqr ?? 0),
+    pgpzh75: Number(item.pgpzh ?? item.second?.pgpzh ?? 0),
+    under75: Number(item.under75 ?? item.second?.under75 ?? 0),
+    firstMedian: item.first?.median == null ? null : Number(item.first.median),
+    secondMedian: item.second?.median == null ? null : Number(item.second.median),
+    deltaMedian: item.deltaMedian == null ? null : Number(item.deltaMedian),
+    rank: Number(rank || 0)
+  });
+
+  const setActivePlotModel = (items, payload, sliceLabels = []) => {
+    activePlotItems = items;
+    activePlotContext = contextToPublic(payload);
+    activePlotSliceLabels = sliceLabels.map(String);
+  };
 
   const leadingTerritory = (rows) => {
     const counts = new Map();
@@ -439,6 +505,106 @@
     });
   };
 
+  const getPublicSummary = () => ({
+    active: state.view === "plot",
+    view: String(state.plotView),
+    level: String(state.plotLevel),
+    classIndex: String(state.plotClass),
+    cause: String(state.plotCause),
+    interval: String(state.plotInterval),
+    sort: String(state.plotSort),
+    minN: String(state.plotMinN),
+    top: String(state.plotTop),
+    compare: String(state.plotCompare),
+    yearA: String(state.plotYearA),
+    yearB: String(state.plotYearB),
+    distributionMetric: String(state.plotDistributionMetric),
+    years: [...DATA.years],
+    classOptions: publicClassOptions,
+    causeOptions: publicCauseOptions(),
+    sliceLabels: [...activePlotSliceLabels],
+    itemCount: activePlotItems.length,
+    selectedKey: state.plotCause === "all" ? null : `${state.plotLevel}:${state.plotCause}`,
+    context: activePlotContext,
+    topItems: activePlotItems.slice(0, 5)
+  });
+
+  const setPublicOption = (option, value) => {
+    const next = String(value);
+    const accepted = {
+      view: new Set(["profile", "compare", "distribution"]),
+      level: new Set(["class", "block", "code"]),
+      interval: new Set(["p10p90", "range"]),
+      sort: new Set(["n", "medianAsc", "medianDesc", "spread", "shift"]),
+      minN: new Set(["5", "10", "20", "50"]),
+      top: new Set(["15", "25"]),
+      compare: new Set(["time", "sex"]),
+      distributionMetric: new Set(["n", "share"])
+    };
+    if (accepted[option] && !accepted[option].has(next)) return;
+    if (option === "classIndex" && next !== "all" && !DATA.classes[next]) return;
+    if (option === "cause" && next !== "all" && !definitions().some((item) => String(item.index) === next)) return;
+    if ((option === "yearA" || option === "yearB") && !DATA.years.map(String).includes(next)) return;
+
+    if (option === "view") {
+      if (state.plotView === next) return;
+      state.plotView = next;
+      if (next === "compare" && state.plotSort !== "shift") state.plotSort = "shift";
+      if (next !== "compare" && state.plotSort === "shift") state.plotSort = "n";
+    } else if (option === "level") {
+      if (state.plotLevel === next) return;
+      state.plotLevel = next;
+      state.plotClass = "all";
+      state.plotCause = "all";
+    } else if (option === "classIndex") {
+      if (String(state.plotClass) === next) return;
+      state.plotClass = next;
+      state.plotCause = "all";
+    } else if (option === "cause") {
+      if (String(state.plotCause) === next) return;
+      state.plotCause = next;
+    } else if (option === "yearA" || option === "yearB") {
+      state[option === "yearA" ? "plotYearA" : "plotYearB"] = next;
+      if (state.plotYearA === state.plotYearB) {
+        if (option === "yearA") state.plotYearB = String([...DATA.years].reverse().find((year) => String(year) !== next) ?? lastYear);
+        else state.plotYearA = String(DATA.years.find((year) => String(year) !== next) ?? firstYear);
+      }
+    } else {
+      const stateKey = {
+        interval: "plotInterval",
+        sort: "plotSort",
+        minN: "plotMinN",
+        top: "plotTop",
+        compare: "plotCompare",
+        distributionMetric: "plotDistributionMetric"
+      }[option];
+      if (!stateKey || String(state[stateKey]) === next) return;
+      state[stateKey] = next;
+    }
+    render();
+  };
+
+  const selectPublicItem = (key) => {
+    const [level, index] = String(key).split(":");
+    if (level !== state.plotLevel || !activePlotItems.some((item) => item.key === `${level}:${index}`)) return;
+    state.plotCause = index;
+    render();
+  };
+
+  const triggerPublicAction = (action) => {
+    if (action !== "distribution" || state.plotCause === "all") return;
+    state.plotView = "distribution";
+    if (state.plotSort === "shift") state.plotSort = "n";
+    render();
+  };
+
+  window.AmurPlotAnalysis = Object.freeze({
+    getSummary: getPublicSummary,
+    setOption: setPublicOption,
+    selectItem: selectPublicItem,
+    triggerAction: triggerPublicAction
+  });
+
   localControls = () => {
     const active = state.view === "plot";
     els.viz.classList.toggle("plot-analysis-host", active);
@@ -581,9 +747,11 @@
     );
     const canvas = root.querySelector(".plot-analysis__canvas");
     if (!items.length) {
+      const context = profileOverviewPayload(items, rows);
+      setActivePlotModel([], context);
       canvas.innerHTML = '<div class="plot-analysis__empty">Нет групп, соответствующих выбранному минимальному числу наблюдений.</div>';
       root.querySelector(".plot-analysis__footnote").textContent = "Уменьшите порог n или измените фильтры.";
-      requestAnimationFrame(() => emitContext(profileOverviewPayload(items, rows)));
+      requestAnimationFrame(() => emitContext(context));
       return root;
     }
     const width = Math.max(720, Math.round(els.viz.clientWidth || 1040));
@@ -600,6 +768,7 @@
     const graphic = svg("svg", { viewBox: `0 0 ${width} ${height}`, class: "plot-analysis-svg", preserveAspectRatio: "xMidYMid meet", "aria-label": "Медианный возраст и интервалы по причинам смерти" });
     drawAxes(graphic, width, height, left, right, top, bottom, scale, reference);
     const maxN = Math.max(...items.map((item) => item.n), 1);
+    const publicItems = [];
     items.forEach((item, index) => {
       const y = top + rowHeight * (index + .5);
       const [outerLow, outerHigh] = intervalValues(item);
@@ -613,12 +782,16 @@
       group.appendChild(svg("circle", { cx: scale(item.median), cy: y, r: radius, class: "plot-median-point", fill: item.color }));
       textNode(group, width - 12, y + 4, `n=${number(item.n)}`, "plot-n-label", "end");
       graphic.appendChild(group);
-      addRowInteraction(group, summaryPayload(item, index + 1), tooltipProfile(item), item);
+      const payload = summaryPayload(item, index + 1);
+      publicItems.push(itemToPublic(item, index + 1));
+      addRowInteraction(group, payload, tooltipProfile(item), item);
     });
     canvas.appendChild(graphic);
     root.querySelector(".plot-analysis__footnote").textContent = "Нажмите строку для подробностей справа; двойной клик открывает полное распределение. Вертикальный пунктир — медиана всего текущего среза.";
     const selected = items.find((item) => String(item.index) === String(state.plotCause));
-    requestAnimationFrame(() => emitContext(selected ? summaryPayload(selected, items.indexOf(selected) + 1) : profileOverviewPayload(items, rows)));
+    const context = selected ? summaryPayload(selected, items.indexOf(selected) + 1) : profileOverviewPayload(items, rows);
+    setActivePlotModel(publicItems, context);
+    requestAnimationFrame(() => emitContext(context));
     return root;
   };
 
@@ -640,9 +813,11 @@
     );
     const canvas = root.querySelector(".plot-analysis__canvas");
     if (!items.length) {
+      const context = comparisonOverviewPayload(items, slices);
+      setActivePlotModel([], context, slices.map((slice) => slice.label));
       canvas.innerHTML = '<div class="plot-analysis__empty">Недостаточно наблюдений в обоих сравниваемых срезах.</div>';
       root.querySelector(".plot-analysis__footnote").textContent = "Для строки требуется достижение выбранного порога n в каждом срезе.";
-      requestAnimationFrame(() => emitContext(comparisonOverviewPayload(items, slices)));
+      requestAnimationFrame(() => emitContext(context));
       return root;
     }
     const width = Math.max(720, Math.round(els.viz.clientWidth || 1040));
@@ -658,6 +833,7 @@
     const scale = (age) => left + Math.max(0, Math.min(110, age)) / 110 * (width - left - right);
     const graphic = svg("svg", { viewBox: `0 0 ${width} ${height}`, class: "plot-analysis-svg", preserveAspectRatio: "xMidYMid meet", "aria-label": "Сравнение медианного возраста и интервалов" });
     drawAxes(graphic, width, height, left, right, top, bottom, scale);
+    const publicItems = [];
     items.forEach((item, index) => {
       const y = top + rowHeight * (index + .5);
       const group = svg("g", { class: "plot-cause-row" });
@@ -675,12 +851,16 @@
       const deltaClass = item.deltaMedian > 0 ? "is-later" : item.deltaMedian < 0 ? "is-earlier" : "is-stable";
       textNode(group, width - 12, y + 4, signed(item.deltaMedian, " г."), `plot-delta-label ${deltaClass}`, "end");
       graphic.appendChild(group);
-      addRowInteraction(group, comparisonPayload(item, slices, index + 1), tooltipCompare(item, slices), item);
+      const payload = comparisonPayload(item, slices, index + 1);
+      publicItems.push(itemToPublic(item, index + 1));
+      addRowInteraction(group, payload, tooltipCompare(item, slices), item);
     });
     canvas.appendChild(graphic);
     root.querySelector(".plot-analysis__footnote").textContent = "Две точки показывают медианы, две цветные полосы — Q1–Q3. Положительное изменение означает смещение к более старшему возрасту, но не оценивает риск смертности.";
     const selected = items.find((item) => String(item.index) === String(state.plotCause));
-    requestAnimationFrame(() => emitContext(selected ? comparisonPayload(selected, slices, items.indexOf(selected) + 1) : comparisonOverviewPayload(items, slices)));
+    const context = selected ? comparisonPayload(selected, slices, items.indexOf(selected) + 1) : comparisonOverviewPayload(items, slices);
+    setActivePlotModel(publicItems, context, slices.map((slice) => slice.label));
+    requestAnimationFrame(() => emitContext(context));
     return root;
   };
 
@@ -723,9 +903,7 @@
     const canvas = root.querySelector(".plot-analysis__canvas");
     const footnote = root.querySelector(".plot-analysis__footnote");
     if (!definition) {
-      canvas.innerHTML = '<div class="plot-analysis__empty"><strong>Причина ещё не выбрана</strong><span>Выберите её слева или вернитесь в режим «Профиль» и нажмите нужную строку.</span></div>';
-      footnote.textContent = "Распределение строится только для одной причины, чтобы не смешивать формы разных возрастных профилей.";
-      requestAnimationFrame(() => emitContext({
+      const context = {
         title: "Распределение одной причины",
         subtitle: "Причина не выбрана",
         primary: { label: "доступных причин", value: number(definitions().length) },
@@ -734,13 +912,19 @@
           { label: "Минимум выборки", value: `n ≥ ${state.plotMinN}` }
         ],
         insight: "Выберите одну причину слева. После выбора будут показаны плотность, пятилетние возрастные группы и квантили."
-      }));
+      };
+      setActivePlotModel([], context);
+      canvas.innerHTML = '<div class="plot-analysis__empty"><strong>Причина ещё не выбрана</strong><span>Выберите её слева или вернитесь в режим «Профиль» и нажмите нужную строку.</span></div>';
+      footnote.textContent = "Распределение строится только для одной причины, чтобы не смешивать формы разных возрастных профилей.";
+      requestAnimationFrame(() => emitContext(context));
       return root;
     }
     if (item.n < +state.plotMinN) {
+      const context = item.n ? summaryPayload(item) : null;
+      setActivePlotModel(item.n ? [itemToPublic(item, 1)] : [], context);
       canvas.innerHTML = `<div class="plot-analysis__empty"><strong>Недостаточно наблюдений</strong><span>Для ${esc(definition.code)} найдено ${number(item.n)}, выбранный порог — n ≥ ${state.plotMinN}.</span></div>`;
       footnote.textContent = "Уменьшите минимальный размер группы или измените фильтры.";
-      emitContext(item.n ? summaryPayload(item) : null);
+      emitContext(context);
       return root;
     }
     const width = Math.max(720, Math.round(els.viz.clientWidth || 1040));
@@ -811,6 +995,7 @@
     footnote.textContent = `n=${number(item.n)} · медиана ${number(item.median, 1)} года · Q1–Q3 ${number(item.q1, 1)}–${number(item.q3, 1)} · до 75 лет ${number(item.under75, 1)}%. Плотность сглажена для чтения формы распределения.`;
     const payload = summaryPayload(item);
     delete payload.action;
+    setActivePlotModel([itemToPublic(item, 1)], payload);
     requestAnimationFrame(() => emitContext(payload));
     return root;
   };
