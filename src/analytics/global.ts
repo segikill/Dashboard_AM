@@ -9,6 +9,17 @@ import {
   type ObservationFilters,
   type ObservationStats
 } from "./core";
+import {
+  blockIndexOf,
+  classIndexOf,
+  countClasses,
+  type AtlasCodeReference
+} from "./classification";
+import {
+  aggregateTerritories,
+  type TerritoryAggregate,
+  type TerritoryAggregationOptions
+} from "./territory";
 
 export interface AtlasAnalyticsCoreApi {
   readonly version: "1";
@@ -20,6 +31,18 @@ export interface AtlasAnalyticsCoreApi {
   ): T[];
   quantile(values: readonly number[], q: number): number | null;
   stats(records: readonly AtlasObservation[]): ObservationStats;
+  classOf(record: AtlasObservation, codes: readonly AtlasCodeReference[]): number;
+  blockOf(record: AtlasObservation, codes: readonly AtlasCodeReference[]): number;
+  classCounts(
+    records: readonly AtlasObservation[],
+    codes: readonly AtlasCodeReference[],
+    classCount: number
+  ): number[];
+  aggregateTerritories<T extends AtlasObservation>(
+    records: readonly T[],
+    codes: readonly AtlasCodeReference[],
+    options: TerritoryAggregationOptions
+  ): Map<number, TerritoryAggregate<T>>;
 }
 
 declare global {
@@ -33,7 +56,11 @@ const api: AtlasAnalyticsCoreApi = Object.freeze({
   agePass: agePassesFilter,
   filterRecords: filterObservations,
   quantile,
-  stats: summarizeObservations
+  stats: summarizeObservations,
+  classOf: classIndexOf,
+  blockOf: blockIndexOf,
+  classCounts: countClasses,
+  aggregateTerritories
 });
 
 window.AmurAtlasAnalyticsCore = api;

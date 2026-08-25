@@ -37,12 +37,42 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
         window.AMUR_ATLAS_DATA.records,
         { year: "2025", sex: "2", age: "65_79" }
       );
+      const classCounts = core?.classCounts(
+        window.AMUR_ATLAS_DATA.records,
+        window.AMUR_ATLAS_DATA.codes,
+        window.AMUR_ATLAS_DATA.classes.length
+      ) || [];
+      const municipalities = core?.aggregateTerritories(
+        window.AMUR_ATLAS_DATA.records,
+        window.AMUR_ATLAS_DATA.codes,
+        { unit: "mo", classCount: window.AMUR_ATLAS_DATA.classes.length, includeUnmappedCodes: false }
+      );
+      const settlements = core?.aggregateTerritories(
+        window.AMUR_ATLAS_DATA.records,
+        window.AMUR_ATLAS_DATA.codes,
+        {
+          unit: "settlement",
+          classCount: window.AMUR_ATLAS_DATA.classes.length,
+          selectedClass: "all",
+          includeUnmappedCodes: true
+        }
+      );
+      const territoryTotal = (items) => items
+        ? [...items.values()].reduce((sum, item) => sum + item.total, 0)
+        : null;
       return {
         version: core?.version || null,
         records: all?.n ?? null,
         median: all?.median ?? null,
         pgpzh: all?.pgpzh ?? null,
-        filteredRecords: filtered?.length ?? null
+        filteredRecords: filtered?.length ?? null,
+        mappedIcd: classCounts.reduce((sum, value) => sum + value, 0),
+        leadingClass: classCounts.indexOf(Math.max(...classCounts)),
+        leadingClassRecords: Math.max(...classCounts),
+        municipalityIcdRows: territoryTotal(municipalities),
+        municipalities: municipalities?.size ?? null,
+        settlementRows: territoryTotal(settlements),
+        settlements: settlements?.size ?? null
       };
     })(),
     summary: window.AtlasLegacyBridge.getDataSummary(),
@@ -68,6 +98,13 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
     || initial.analyticsCore.median !== 69
     || initial.analyticsCore.pgpzh !== 337976
     || initial.analyticsCore.filteredRecords !== 1850
+    || initial.analyticsCore.mappedIcd !== 30127
+    || initial.analyticsCore.leadingClass !== 8
+    || initial.analyticsCore.leadingClassRecords !== 13795
+    || initial.analyticsCore.municipalityIcdRows !== 30045
+    || initial.analyticsCore.municipalities !== 29
+    || initial.analyticsCore.settlementRows !== 29506
+    || initial.analyticsCore.settlements !== 503
   ) {
     errors.push(`analytics core regression: ${JSON.stringify(initial.analyticsCore)}`);
   } else {
