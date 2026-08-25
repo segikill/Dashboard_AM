@@ -98,12 +98,15 @@ main{width:min(1660px,calc(100% - 24px));margin:auto;padding:18px 0 50px}.hero{p
 <li>Диаграмма рангов сопоставляет классы МКБ между 2023 и 2025 годами либо между мужчинами и женщинами.</li>
 </ul><div class="downloads"><a href="tables/class_year.csv">Класс × год</a><a href="tables/municipality_class.csv">МО × класс</a><a href="tables/quality.json">Контроль качества</a></div></section><footer>Амурская область · интерактивный атлас визуализаций · 28.07.2026</footer></section>
 </div></main><div class="tooltip" id="tooltip"></div><div id="reactHybridRoot" data-react-hybrid-root hidden></div>
+<script src="assets/analytics/atlas-analytics-core.js?v=stage6-1"></script>
 <script src="data/atlas-reference.js?v=e1022f47a0b1"></script>
 <script src="data/atlas-observations.js?v=4fe70192f128"></script>
 <script src="data/atlas-data.js?v=9eaeeeda6ce2"></script>
 <script>
 const DATA=window.AMUR_ATLAS_DATA;
 if(!DATA){throw new Error('Atlas data failed to load: data/atlas-data.js');}
+const ANALYTICS_CORE=window.AmurAtlasAnalyticsCore;
+if(!ANALYTICS_CORE){throw new Error('Atlas analytics core failed to load: assets/analytics/atlas-analytics-core.js');}
 const NF=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0}),DF=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:1});
 const state={view:'map',year:'all',sex:'all',age:'all',treeType:'root',treeIndex:-1,treeMetric:'n',treeColor:'change',heatUnit:'mo',heatMetric:'share',heatLimit:'25',arrowMode:'time',pyramidClass:'all',pyramidMetric:'n',plotLevel:'class',plotClass:'all',mapUnit:'settlement',mapMetric:'n',mapClass:'all',mapScaleMax:'',dotUnit:'settlement',dotMetric:'n',dotClass:'all'};
 const VIEWS={treemap:['Treemap МКБ-10','Класс → крупный блок → трёхзначный код. Нажмите на прямоугольник для детализации.'],heatmap:['Heatmap «территория × причина»','Строки — территории, столбцы — классы МКБ-10; перечень городов и районов зафиксирован для сопоставления периодов.'],arrow:['Arrow diagram рангов','Сопоставление позиций классов МКБ между годами или между мужчинами и женщинами.'],pyramid:['Возрастно-половая пирамида','Мужчины слева, женщины справа; доступен выбор класса МКБ-10.'],plot:['Медианный возраст и интервалы','Точка — медиана, толстый отрезок — Q1–Q3, тонкий — наблюдаемый диапазон.'],map:['Интерактивная карта смертности','Полигоны МО и точки НП в EPSG:3857 показывают число смертей, структуру или среднегодовой показатель на 1/10/100 тыс.'],dotogram:['Dotogram территорий','Одна точка — муниципалитет или НП; положение кодирует выбранный показатель, включая среднегодовой расчёт по населению.'],infrastructure:['Медицинская инфраструктура и доступность больниц','Медицинские учреждения, изохроны доступности от больниц 20 и 60 минут, границы МО и населённые пункты с размером по численности 2021 года.']};
@@ -112,11 +115,11 @@ const els={viz:document.getElementById('viz'),title:document.getElementById('cha
 DATA.years.forEach(y=>document.getElementById('yearSelect').insertAdjacentHTML('beforeend',`<option value="${y}">${y}</option>`));
 const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const fmt=v=>NF.format(Math.round(v||0)),pct=v=>`${DF.format(v||0)}%`;
-function agePass(a){if(state.age==='all')return true;if(a<0)return false;if(state.age==='0_14')return a<15;if(state.age==='15_44')return a>=15&&a<45;if(state.age==='45_64')return a>=45&&a<65;if(state.age==='65_79')return a>=65&&a<80;return a>=80}
-function filtered(options={}){const years=options.years?new Set(options.years):null;return DATA.records.filter(r=>(options.ignoreYear||(years?years.has(r[0]):state.year==='all'||r[0]===+state.year))&&(options.ignoreSex||state.sex==='all'||r[1]===+state.sex)&&agePass(r[2]))}
+function agePass(a){return ANALYTICS_CORE.agePass(a,state.age)}
+function filtered(options={}){return ANALYTICS_CORE.filterRecords(DATA.records,{year:state.year,sex:state.sex,age:state.age},options)}
 function classOf(r){return r[3]>=0?DATA.codes[r[3]].class:-1}function blockOf(r){return r[3]>=0?DATA.codes[r[3]].block:-1}
-function quantile(values,q){if(!values.length)return null;const a=[...values].sort((x,y)=>x-y),p=(a.length-1)*q,b=Math.floor(p),d=p-b;return a[b+1]!==undefined?a[b]+d*(a[b+1]-a[b]):a[b]}
-function stats(rows){const ages=rows.filter(r=>r[2]>=0).map(r=>r[2]);return{n:rows.length,ages,median:quantile(ages,.5),pgpzh:ages.reduce((s,a)=>s+Math.max(75-a,0),0)}}
+function quantile(values,q){return ANALYTICS_CORE.quantile(values,q)}
+function stats(rows){return ANALYTICS_CORE.stats(rows)}
 function showTip(e,html){els.tip.innerHTML=html;els.tip.style.display='block';moveTip(e)}function moveTip(e){const w=els.tip.offsetWidth||330,h=els.tip.offsetHeight||160,p=12;let x=e.clientX+13,y=e.clientY+13;if(x+w>innerWidth-p)x=e.clientX-w-13;if(y+h>innerHeight-p)y=e.clientY-h-13;els.tip.style.left=`${Math.max(p,x)}px`;els.tip.style.top=`${Math.max(p,y)}px`}function hideTip(){els.tip.style.display='none'}
 function addTip(el,html){el.addEventListener('mouseenter',e=>showTip(e,typeof html==='function'?html():html));el.addEventListener('mousemove',moveTip);el.addEventListener('mouseleave',hideTip)}
 function selectField(id,label,options,value){return `<div class="field"><label for="${id}">${label}</label><select id="${id}">${options.map(o=>`<option value="${o[0]}" ${String(o[0])===String(value)?'selected':''}>${esc(o[1])}</option>`).join('')}</select></div>`}

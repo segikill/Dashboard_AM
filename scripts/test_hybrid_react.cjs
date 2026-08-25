@@ -30,6 +30,21 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
   await page.waitForFunction(() => window.AtlasLegacyBridge.getMapChromeSummary().mapMounted);
 
   const initial = await page.evaluate(() => ({
+    analyticsCore: (() => {
+      const core = window.AmurAtlasAnalyticsCore;
+      const all = core?.stats(window.AMUR_ATLAS_DATA.records);
+      const filtered = core?.filterRecords(
+        window.AMUR_ATLAS_DATA.records,
+        { year: "2025", sex: "2", age: "65_79" }
+      );
+      return {
+        version: core?.version || null,
+        records: all?.n ?? null,
+        median: all?.median ?? null,
+        pgpzh: all?.pgpzh ?? null,
+        filteredRecords: filtered?.length ?? null
+      };
+    })(),
     summary: window.AtlasLegacyBridge.getDataSummary(),
     state: window.AtlasLegacyBridge.getSnapshot(),
     hidden: document.querySelector("[data-react-hybrid-root]").hidden,
@@ -47,6 +62,17 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
     spatialStatus: window.AmurAtlasDataLoader?.getStatus?.(),
     spatialScriptPresent: Boolean(document.getElementById("amur-atlas-spatial-data"))
   }));
+  if (
+    initial.analyticsCore.version !== "1"
+    || initial.analyticsCore.records !== 30232
+    || initial.analyticsCore.median !== 69
+    || initial.analyticsCore.pgpzh !== 337976
+    || initial.analyticsCore.filteredRecords !== 1850
+  ) {
+    errors.push(`analytics core regression: ${JSON.stringify(initial.analyticsCore)}`);
+  } else {
+    console.log("SMOKE: typed analytics core matches control aggregates");
+  }
 
   await page.click('[data-react-navigation-view="treemap"]');
   await page.waitForFunction(() => window.AtlasLegacyBridge.getSnapshot().view === "treemap");
