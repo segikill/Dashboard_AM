@@ -3,7 +3,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const root = path.resolve(__dirname, "..");
+const rootArgIndex = process.argv.indexOf("--root");
+const root = rootArgIndex >= 0
+  ? path.resolve(process.cwd(), process.argv[rootArgIndex + 1] || "")
+  : path.resolve(__dirname, "..");
+if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+  throw new Error(`Atlas data validation root does not exist: ${root}`);
+}
 const dataDir = path.join(root, "data");
 const checksumPath = path.join(dataDir, "atlas-data.sha256");
 const manifestPath = path.join(dataDir, "atlas-data.manifest.json");

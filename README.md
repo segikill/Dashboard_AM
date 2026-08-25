@@ -7,7 +7,7 @@
 Проект постепенно переводится на гибридную архитектуру React + TypeScript. Действующие карты и SVG-визуализации продолжают работать на существующем JavaScript, а новые компоненты подключаются через типизированный мост совместимости.
 
 - Node.js используется только для разработки, сборки и тестов.
-- GitHub Pages продолжает публиковать статические файлы.
+- GitHub Pages публикует только проверенный каталог `dist/`, собранный GitHub Actions.
 - Production React-модуль собирается в `assets/react/atlas-hybrid.js`.
 - Анонимизированные данные разделены на версионируемые ресурсы: наблюдения `data/atlas-observations.js`, справочники `data/atlas-reference.js`, компактный сборщик `data/atlas-data.js` и отложенная резервная геометрия `data/atlas-spatial.js`. Схема, размеры, SHA-256 каждого ресурса и итоговая реконструкция проверяются до тестов и сборки.
 - В обычном режиме React-диагностика скрыта; открыть её можно параметром `?reactDebug=1`.
@@ -36,6 +36,8 @@ npm run data:validate
 npm run typecheck
 npm test
 npm run build
+npm run dist:reproducible
+npm run test:dist-browser
 ```
 
 Воспроизводимая генерация разделённых ресурсов из текущего набора `DATA`:
@@ -57,3 +59,13 @@ npm run dev
 ```powershell
 npm run test:hybrid
 ```
+
+## Публикация
+
+Workflow `.github/workflows/pages.yml` автоматически выполняется после push в `main`: устанавливает зависимости через `npm ci`, проверяет данные и TypeScript, собирает `dist`, повторяет упаковку для контроля воспроизводимости, запускает Chrome smoke-тесты и только затем публикует GitHub Pages.
+
+Перед первым запуском в репозитории нужно один раз выбрать **Settings → Pages → Source → GitHub Actions**.
+
+Каждая публикация сохраняется отдельным артефактом `dashboard-am-<commit>` на 30 дней. Для быстрого отката откройте **Actions → Build and deploy GitHub Pages → Run workflow** и укажите предыдущий commit или tag в поле `deploy_ref`. После публикации workflow повторно скачивает все production-файлы и сверяет их размеры и SHA-256 с `build-manifest.json`.
+
+Подробности решения: [docs/architecture/adr-0002-verified-pages-delivery.md](docs/architecture/adr-0002-verified-pages-delivery.md).

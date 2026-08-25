@@ -1,10 +1,10 @@
 const { chromium } = require("playwright");
+const { chromiumLaunchOptions } = require("./playwright_launch.cjs");
 
-const chrome = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
 
 (async () => {
-  const browser = await chromium.launch({ headless: true, executablePath: chrome });
+  const browser = await chromium.launch(chromiumLaunchOptions());
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.setDefaultTimeout(20_000);
   const errors = [];
@@ -549,11 +549,18 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
   console.log(`SMOKE: all views rendered (${renderedViews.join(", ")})`);
 
   await page.click('[data-react-navigation-view="treemap"]');
-  await page.waitForSelector("[data-react-treemap-inspector-ready]", { state: "visible" });
+  await page.waitForFunction(() => window.AtlasLegacyBridge.getSnapshot().view === "treemap"
+    && Boolean(document.querySelector(".treemap-v2-layout"))
+    && Boolean(document.querySelector("[data-react-treemap-breadcrumbs-ready]"))
+    && Boolean(document.querySelector("[data-react-treemap-controls-ready]"))
+    && Boolean(document.querySelector("[data-react-treemap-inspector-ready]")));
   const treemapLayouts = [];
   for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }, { width: 2560, height: 1440 }]) {
     await page.setViewportSize(viewport);
-    await page.waitForSelector("[data-react-treemap-inspector-ready]", { state: "visible" });
+    await page.waitForFunction(() => Boolean(document.querySelector(".treemap-v2-layout"))
+      && Boolean(document.querySelector("[data-react-treemap-breadcrumbs-ready]"))
+      && Boolean(document.querySelector("[data-react-treemap-controls-ready]"))
+      && Boolean(document.querySelector("[data-react-treemap-inspector-ready]")));
     await page.waitForTimeout(100);
     const layout = await page.evaluate(() => {
       const viz = document.querySelector("#viz").getBoundingClientRect();
@@ -587,8 +594,9 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
     await page.setViewportSize(viewport);
     await page.waitForFunction(() => {
       const layout = document.querySelector(".heatmap-v2-layout");
+      const controls = document.querySelector("[data-react-heatmap-controls-ready]");
       const inspector = document.querySelector("[data-react-heatmap-inspector-ready]");
-      return Boolean(layout && inspector && inspector.getBoundingClientRect().width > 0);
+      return Boolean(layout && controls && inspector && inspector.getBoundingClientRect().width > 0);
     });
     await page.waitForTimeout(75);
     const layout = await page.evaluate(() => {
@@ -621,8 +629,10 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
     await page.setViewportSize(viewport);
     await page.waitForFunction(() => {
       const chart = document.querySelector(".rank-analysis");
+      const controls = document.querySelector("[data-react-rank-controls-ready]");
       const inspector = document.querySelector("[data-react-rank-inspector-ready]");
-      return Boolean(chart && inspector && inspector.getBoundingClientRect().width > 0);
+      const svg = document.querySelector(".rank-analysis-svg");
+      return Boolean(chart && controls && inspector && svg && inspector.getBoundingClientRect().width > 0);
     });
     await page.waitForTimeout(75);
     const layout = await page.evaluate(() => {
@@ -654,8 +664,10 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
     await page.setViewportSize(viewport);
     await page.waitForFunction(() => {
       const chart = document.querySelector(".pyramid-analysis");
+      const controls = document.querySelector("[data-react-pyramid-controls-ready]");
       const inspector = document.querySelector("[data-react-pyramid-inspector-ready]");
-      return Boolean(chart && inspector && inspector.getBoundingClientRect().width > 0);
+      const svg = document.querySelector(".pyramid-analysis-svg");
+      return Boolean(chart && controls && inspector && svg && inspector.getBoundingClientRect().width > 0);
     });
     await page.waitForTimeout(75);
     const layout = await page.evaluate(() => {
@@ -687,8 +699,10 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
     await page.setViewportSize(viewport);
     await page.waitForFunction(() => {
       const chart = document.querySelector(".plot-analysis");
+      const controls = document.querySelector("[data-react-plot-controls-ready]");
       const inspector = document.querySelector("[data-react-plot-inspector-ready]");
-      return Boolean(chart && inspector && inspector.getBoundingClientRect().width > 0);
+      const svg = document.querySelector(".plot-analysis-svg");
+      return Boolean(chart && controls && inspector && svg && inspector.getBoundingClientRect().width > 0);
     });
     await page.waitForTimeout(75);
     const layout = await page.evaluate(() => {
@@ -720,8 +734,9 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
     await page.setViewportSize(viewport);
     await page.waitForFunction(() => {
       const chart = document.querySelector("#viz > .svg-chart");
+      const controls = document.querySelector("[data-react-dotogram-controls-ready]");
       const inspector = document.querySelector("[data-react-dotogram-inspector-ready]");
-      return Boolean(chart && inspector && inspector.getBoundingClientRect().width > 0);
+      return Boolean(chart && controls && inspector && inspector.getBoundingClientRect().width > 0);
     });
     await page.waitForTimeout(75);
     const layout = await page.evaluate(() => {

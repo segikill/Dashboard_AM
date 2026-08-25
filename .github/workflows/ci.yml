@@ -1,0 +1,36 @@
+name: Verify atlas
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify data and unit tests
+        run: npm test
+
+      - name: Build verified static site
+        run: npm run build
+
+      - name: Verify reproducible packaging
+        run: npm run dist:reproducible

@@ -1,6 +1,6 @@
 const { chromium } = require("playwright");
+const { chromiumLaunchOptions } = require("./playwright_launch.cjs");
 
-const chrome = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
 
 let browser;
@@ -12,7 +12,7 @@ const median = (values) => {
 };
 
 (async () => {
-  browser = await chromium.launch({ headless: true, executablePath: chrome });
+  browser = await chromium.launch(chromiumLaunchOptions());
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
   const errors = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(`console: ${message.text()}`); });

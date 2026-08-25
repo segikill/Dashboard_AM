@@ -1,0 +1,123 @@
+name: Build and deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_ref:
+        description: Commit, tag or branch to deploy; leave empty for the current revision
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      revision: ${{ steps.revision.outputs.sha }}
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.deploy_ref || github.sha }}
+          persist-credentials: false
+
+      - name: Resolve deployment revision
+        id: revision
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify data and unit tests
+        run: npm test
+
+      - name: Build verified static site
+        run: npm run build
+        env:
+          ATLAS_SOURCE_REVISION: ${{ steps.revision.outputs.sha }}
+
+      - name: Verify reproducible packaging
+        run: npm run dist:reproducible
+        env:
+          ATLAS_SOURCE_REVISION: ${{ steps.revision.outputs.sha }}
+
+      - name: Install Chromium for browser smoke tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify the packaged site in Chromium
+        run: npm run test:dist-browser
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Save immutable rollback artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: dashboard-am-${{ steps.revision.outputs.sha }}
+          path: dist
+          include-hidden-files: true
+          retention-days: 30
+          compression-level: 9
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+  smoke:
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout deployed revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.revision }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Verify deployed files and hashes
+        run: node scripts/smoke_deployed_site.cjs "${{ needs.deploy.outputs.page_url }}"

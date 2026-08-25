@@ -1,4 +1,5 @@
 const { chromium } = require("playwright");
+const { chromiumLaunchOptions } = require("./playwright_launch.cjs");
 const fs = require("fs");
 const path = require("path");
 
@@ -6,17 +7,13 @@ const root = path.resolve(__dirname, "..");
 const artifacts = path.join(root, "artifacts");
 fs.mkdirSync(artifacts, { recursive: true });
 
-const chrome = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const url = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
 
 let browser;
 
 (async () => {
   console.log("launch");
-  browser = await chromium.launch({
-    headless: true,
-    executablePath: chrome
-  });
+  browser = await chromium.launch(chromiumLaunchOptions());
   const errors = [];
   const page = await browser.newPage({
     viewport: { width: 1600, height: 950 },
