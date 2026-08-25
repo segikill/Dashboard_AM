@@ -1644,10 +1644,10 @@
         entry.group.setAttribute("aria-label", `${entry.definition.name}: ${formatTerritoryMetric(state.mapMetric, value.metricValue)}, население ${populationValue(entry.definition) ? fmt(populationValue(entry.definition)) : "не указано"}`);
         entry.group.classList.toggle("site-map-suppressed", suppressSmallValues && value.selected < 5);
       });
-      const ranked = values
-        .filter((value) => Number.isFinite(value.metricValue))
-        .sort((left, right) => right.metricValue - left.metricValue)
-        .slice(0, 15);
+      const ranked = ANALYTICS_CORE.rankItems(
+        values.filter((value) => Number.isFinite(value.metricValue)),
+        (value) => value.metricValue
+      ).slice(0, 15);
       mapRuntime.rank.innerHTML = ranked.map((value, index) =>
         `<div class="rank-item${suppressSmallValues && value.selected < 5 ? " site-map-suppressed" : ""}"><span>${index + 1}. ${esc(defs[value.idx].name)}</span><b>${formatTerritoryMetric(state.mapMetric, value.metricValue)}</b></div>`
       ).join("");

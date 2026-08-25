@@ -103,8 +103,13 @@
       };
     }).filter((item) => item.value != null && Number.isFinite(item.value));
 
-    const ranked = [...items].sort((left, right) => right.value - left.value || left.name.localeCompare(right.name, "ru"));
-    ranked.forEach((item, index) => { item.rank = index + 1; });
+    const ranked = ANALYTICS_CORE.rankItems(
+      items,
+      (item) => item.value,
+      (left, right) => left.name.localeCompare(right.name, "ru")
+    );
+    const rankByKey = new Map(ranked.map((item) => [item.key, item.rank]));
+    items.forEach((item) => { item.rank = rankByKey.get(item.key); });
     const raw = items.map((item) => item.value);
     const q1 = quantile(raw, .25) ?? 0;
     const q3 = quantile(raw, .75) ?? 0;

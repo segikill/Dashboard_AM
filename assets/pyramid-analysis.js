@@ -253,7 +253,7 @@
     const model = activePyramidModel;
     const definitions = causeDefinitions();
     const ranked = model
-      ? [...model.items].sort((left, right) => right.total - left.total || right.ageIndex - left.ageIndex)
+      ? ANALYTICS_CORE.rankItems(model.items, (item) => item.total, (left, right) => right.ageIndex - left.ageIndex)
       : [];
     const rankMap = new Map(ranked.map((item, index) => [item.key, index + 1]));
     const selectedPayload = model?.items.find((item) => item.key === selectedPyramidKey) || ranked[0] || null;

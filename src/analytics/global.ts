@@ -5,6 +5,7 @@ import {
   summarizeObservations,
   type AtlasAgeFilter,
   type AtlasObservation,
+  type AtlasYearFilter,
   type FilterObservationOptions,
   type ObservationFilters,
   type ObservationStats
@@ -20,6 +21,25 @@ import {
   type TerritoryAggregate,
   type TerritoryAggregationOptions
 } from "./territory";
+import {
+  calculateAnnualizedRate,
+  calculateTerritoryMetric,
+  populationValue,
+  rateBase,
+  ratePeriodYears,
+  russianYearCountLabel,
+  type AtlasPopulationDefinition,
+  type RateCalculation,
+  type RateContext,
+  type TerritoryMetricOptions
+} from "./metrics";
+import {
+  rankIndexedValues,
+  rankItemsDescending,
+  type RankedValue,
+  type RankingTieBreaker,
+  type RankingValueSelector
+} from "./ranking";
 
 export interface AtlasAnalyticsCoreApi {
   readonly version: "1";
@@ -43,6 +63,23 @@ export interface AtlasAnalyticsCoreApi {
     codes: readonly AtlasCodeReference[],
     options: TerritoryAggregationOptions
   ): Map<number, TerritoryAggregate<T>>;
+  populationValue(definition?: AtlasPopulationDefinition | null): number | null;
+  rateBase(metric: unknown): number | null;
+  ratePeriodYears(year: AtlasYearFilter, availableYears: readonly number[]): number;
+  rateYearsLabel(years: number): string;
+  calculateRate(
+    count: number,
+    definition: AtlasPopulationDefinition | null | undefined,
+    metric: unknown,
+    context: RateContext
+  ): RateCalculation | null;
+  territoryMetric(options: TerritoryMetricOptions): number | null;
+  rankValues(values: readonly number[]): RankedValue[];
+  rankItems<T extends object>(
+    items: readonly T[],
+    valueOf: RankingValueSelector<T>,
+    tieBreaker?: RankingTieBreaker<T>
+  ): Array<T & { rank: number }>;
 }
 
 declare global {
@@ -60,7 +97,15 @@ const api: AtlasAnalyticsCoreApi = Object.freeze({
   classOf: classIndexOf,
   blockOf: blockIndexOf,
   classCounts: countClasses,
-  aggregateTerritories
+  aggregateTerritories,
+  populationValue,
+  rateBase,
+  ratePeriodYears,
+  rateYearsLabel: russianYearCountLabel,
+  calculateRate: calculateAnnualizedRate,
+  territoryMetric: calculateTerritoryMetric,
+  rankValues: rankIndexedValues,
+  rankItems: rankItemsDescending
 });
 
 window.AmurAtlasAnalyticsCore = api;

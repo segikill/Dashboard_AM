@@ -60,6 +60,15 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
       const territoryTotal = (items) => items
         ? [...items.values()].reduce((sum, item) => sum + item.total, 0)
         : null;
+      const blagoveshchenskDeaths = window.AMUR_ATLAS_DATA.records
+        .filter((record) => record[4] === 3).length;
+      const blagoveshchenskRate = core?.calculateRate(
+        blagoveshchenskDeaths,
+        window.AMUR_ATLAS_DATA.municipalities[3],
+        "per1k",
+        { year: "all", availableYears: window.AMUR_ATLAS_DATA.years }
+      );
+      const rankedValues = core?.rankValues([0.2, 0.5, 0.3]) || [];
       return {
         version: core?.version || null,
         records: all?.n ?? null,
@@ -72,7 +81,15 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
         municipalityIcdRows: territoryTotal(municipalities),
         municipalities: municipalities?.size ?? null,
         settlementRows: territoryTotal(settlements),
-        settlements: settlements?.size ?? null
+        settlements: settlements?.size ?? null,
+        rateDeaths: blagoveshchenskDeaths,
+        ratePopulation: blagoveshchenskRate?.population ?? null,
+        ratePeriodYears: blagoveshchenskRate?.periodYears ?? null,
+        rateDenominator: blagoveshchenskRate?.denominator ?? null,
+        ratePer1k: blagoveshchenskRate ? Number(blagoveshchenskRate.value.toFixed(12)) : null,
+        rateYearsLabel: core?.rateYearsLabel(blagoveshchenskRate?.periodYears ?? 0) ?? null,
+        rankOrder: rankedValues.map((item) => item.i).join(","),
+        ordinalRanks: rankedValues.map((item) => item.rank).join(",")
       };
     })(),
     summary: window.AtlasLegacyBridge.getDataSummary(),
@@ -105,6 +122,14 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
     || initial.analyticsCore.municipalities !== 29
     || initial.analyticsCore.settlementRows !== 29506
     || initial.analyticsCore.settlements !== 503
+    || initial.analyticsCore.rateDeaths !== 9480
+    || initial.analyticsCore.ratePopulation !== 246767
+    || initial.analyticsCore.ratePeriodYears !== 3
+    || initial.analyticsCore.rateDenominator !== 740301
+    || initial.analyticsCore.ratePer1k !== 12.805602045654
+    || initial.analyticsCore.rateYearsLabel !== "3 года"
+    || initial.analyticsCore.rankOrder !== "1,2,0"
+    || initial.analyticsCore.ordinalRanks !== "1,2,3"
   ) {
     errors.push(`analytics core regression: ${JSON.stringify(initial.analyticsCore)}`);
   } else {

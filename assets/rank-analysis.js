@@ -123,10 +123,11 @@
     return { items, total: denominator };
   };
 
-  const ranked = (aggregation) => aggregation.items
-    .filter((item) => Number.isFinite(item.value))
-    .sort((left, right) => right.value - left.value || right.n - left.n || left.index - right.index)
-    .map((item, index) => ({ ...item, rank: index + 1 }));
+  const ranked = (aggregation) => ANALYTICS_CORE.rankItems(
+    aggregation.items.filter((item) => Number.isFinite(item.value)),
+    (item) => item.value,
+    (left, right) => right.n - left.n || left.index - right.index
+  );
 
   const rowsForYear = (year) => filtered({ years: [year] });
 
