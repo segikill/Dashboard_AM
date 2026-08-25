@@ -10,8 +10,10 @@
     "data:validate": "node scripts/validate_atlas_data.cjs",
     "build": "npm run data:validate && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "npm run data:validate && vitest run",
+    "test:data-loader": "node scripts/test_data_loader.cjs",
+    "test": "npm run data:validate && npm run test:data-loader && vitest run",
     "test:hybrid": "node scripts/test_hybrid_react.cjs",
+    "test:spatial-fallback": "node scripts/test_spatial_fallback.cjs",
     "test:performance": "node scripts/test_performance.cjs"
   },
   "engines": {

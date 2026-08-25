@@ -1759,6 +1759,7 @@
       els.meta.innerHTML = `<span class="chip">${state.year === "all" ? (DATA.years.length > 1 ? `${DATA.years[0]}–${DATA.years[DATA.years.length - 1]}` : DATA.years[0]) : state.year}</span><span class="chip">${state.sex === "all" ? "оба пола" : state.sex === "1" ? "мужчины" : "женщины"}</span><span class="chip">${document.querySelector(`#ageSelect option[value="${state.age}"]`)?.textContent || "все возрасты"}</span><span class="chip">EPSG:3857 · Web Mercator</span>`;
       const context = syncActiveMapBreaks();
       if (!window.AmurMortalityMap) {
+        if (!ensureSpatialFallback()) return;
         updateOptimizedMap(context);
         return;
       }

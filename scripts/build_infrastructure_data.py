@@ -73,7 +73,45 @@ def load_atlas_data(path: Path) -> dict[str, Any]:
     if match:
         return json.loads(match.group(1))
 
-    external_path = path.parent / "data" / "atlas-data.js"
+    data_dir = path.parent / "data"
+    split_paths = {
+        "reference": data_dir / "atlas-reference.js",
+        "observations": data_dir / "atlas-observations.js",
+        "spatial": data_dir / "atlas-spatial.js",
+    }
+    if all(item.exists() for item in split_paths.values()):
+        def read_assignment(file_path: Path, variable: str) -> Any:
+            source = file_path.read_text(encoding="utf-8")
+            marker = f"{variable}="
+            start = source.find(marker)
+            end = source.rfind(";")
+            if start < 0 or end <= start:
+                raise ValueError(f"Could not find {variable} in {file_path}")
+            return json.loads(source[start + len(marker):end])
+
+        data = read_assignment(
+            split_paths["reference"], "window.AMUR_ATLAS_REFERENCE"
+        )
+        data["records"] = read_assignment(
+            split_paths["observations"], "window.AMUR_ATLAS_OBSERVATIONS"
+        )
+        spatial = read_assignment(
+            split_paths["spatial"], "window.AMUR_ATLAS_SPATIAL"
+        )
+        data["mapBounds3857"] = spatial["mapBounds3857"]
+        for municipality, geometry in zip(
+            data["municipalities"], spatial["municipalityGeometries"], strict=True
+        ):
+            municipality["geometry"] = geometry
+        for settlement, coordinates in zip(
+            data["settlements"], spatial["settlementCoordinates"], strict=True
+        ):
+            settlement.update(dict(zip(
+                ("lat", "lon", "x3857", "y3857"), coordinates, strict=True
+            )))
+        return data
+
+    external_path = data_dir / "atlas-data.js"
     if external_path.exists():
         external_text = external_path.read_text(encoding="utf-8")
         external_match = re.search(

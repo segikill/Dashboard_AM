@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://segikill.github.io/Dashboard_AM/data/atlas-data.schema.json",
   "title": "Dashboard_AM analytical data contract",
-  "description": "Contract for the anonymized mortality, ICD-10, municipality and settlement dataset loaded by the Amur mortality atlas.",
+  "description": "Contract for the fully assembled anonymized mortality, ICD-10, municipality and settlement dataset loaded by the Amur mortality atlas.",
   "type": "object",
   "required": [
     "regionKey",
@@ -68,6 +68,18 @@
     "quality": { "type": "object" }
   },
   "additionalProperties": true,
+  "x-delivery-contract": {
+    "schemaVersion": 2,
+    "eagerResources": [
+      "atlas-reference.js",
+      "atlas-observations.js",
+      "atlas-data.js"
+    ],
+    "lazyResources": [
+      "atlas-spatial.js"
+    ],
+    "spatialProjection": "EPSG:3857"
+  },
   "x-atlas-contract": {
     "schemaVersion": 1,
     "regionKey": "amur",

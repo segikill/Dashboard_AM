@@ -31,6 +31,13 @@ const median = (values) => {
       .filter((entry) => entry.responseEnd <= domContentLoaded)
       .reduce((sum, entry) => sum + (entry.transferSize || 0), 0);
     const resourceTransferBytes = resources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0);
+    const atlasDataResources = resources
+      .filter((entry) => /\/data\/atlas-(?:reference|observations|data|spatial)\.js/.test(entry.name))
+      .map((entry) => ({
+        file: entry.name.split("/").at(-1).split("?")[0],
+        transferBytes: entry.transferSize || 0,
+        responseEnd: Math.round(entry.responseEnd)
+      }));
     return {
       domContentLoaded: Math.round(domContentLoaded),
       navigationTransferBytes,
@@ -39,7 +46,9 @@ const median = (values) => {
       resourceTransferBytes,
       transferBytes: navigationTransferBytes + resourceTransferBytes,
       resourceCount: resources.length,
-      domNodes: document.getElementsByTagName("*").length
+      domNodes: document.getElementsByTagName("*").length,
+      atlasDataResources,
+      spatialFallbackLoaded: atlasDataResources.some((entry) => entry.file === "atlas-spatial.js")
     };
   });
   await page.waitForFunction(

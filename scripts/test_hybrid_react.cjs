@@ -43,7 +43,9 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
     reactNavigationVisible: !document.querySelector("[data-react-navigation-rail]").hidden,
     legacyNavigationHidden: document.querySelector("[data-legacy-navigation-rail]").offsetParent === null,
     reactNavigationButtons: document.querySelectorAll("[data-react-navigation-view]").length,
-    initialMapCanvas: Boolean(window.__initialMapCanvas = document.querySelector(".mortality-map canvas"))
+    initialMapCanvas: Boolean(window.__initialMapCanvas = document.querySelector(".mortality-map canvas")),
+    spatialStatus: window.AmurAtlasDataLoader?.getStatus?.(),
+    spatialScriptPresent: Boolean(document.getElementById("amur-atlas-spatial-data"))
   }));
 
   await page.click('[data-react-navigation-view="treemap"]');
@@ -418,6 +420,9 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
   if (!initial.reactNavigationVisible || !initial.legacyNavigationHidden || initial.reactNavigationButtons !== 8
     || initial.navigation.viewCount !== 8 || initial.navigation.activeView !== "map" || !initial.initialMapCanvas) {
     errors.push(`navigation fallback swap: ${JSON.stringify(initial)}`);
+  }
+  if (initial.spatialStatus?.spatialReady || initial.spatialStatus?.spatialLoading || initial.spatialScriptPresent) {
+    errors.push(`enhanced map unexpectedly loaded fallback geometry: ${JSON.stringify(initial.spatialStatus)}`);
   }
   await page.focus('[data-react-navigation-view="map"]');
   await page.keyboard.press("ArrowDown");

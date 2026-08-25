@@ -4,29 +4,95 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
-const dataPath = path.join(root, "data", "atlas-data.js");
-const checksumPath = path.join(root, "data", "atlas-data.sha256");
-const schemaPath = path.join(root, "data", "atlas-data.schema.json");
+const dataDir = path.join(root, "data");
+const checksumPath = path.join(dataDir, "atlas-data.sha256");
+const manifestPath = path.join(dataDir, "atlas-data.manifest.json");
+const schemaPath = path.join(dataDir, "atlas-data.schema.json");
 const htmlPath = path.join(root, "index.html");
+const coreFiles = ["atlas-reference.js", "atlas-observations.js", "atlas-data.js"];
+const resourceFiles = [...coreFiles, "atlas-spatial.js"];
 
 const fail = (message) => {
   throw new Error(`Atlas data validation failed: ${message}`);
 };
+const sha256 = (value) => crypto.createHash("sha256").update(value, "utf8").digest("hex");
 
-const source = fs.readFileSync(dataPath, "utf8");
-const expectedChecksum = fs.readFileSync(checksumPath, "utf8").trim().split(/\s+/)[0];
-const actualChecksum = crypto.createHash("sha256").update(source, "utf8").digest("hex");
-if (actualChecksum !== expectedChecksum) {
-  fail(`SHA-256 mismatch (expected ${expectedChecksum}, got ${actualChecksum}).`);
+const checksumEntries = new Map(
+  fs.readFileSync(checksumPath, "utf8")
+    .trim()
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^([a-f0-9]{64})\s+(.+)$/);
+      if (!match) fail(`invalid checksum line: ${line}.`);
+      return [match[2], match[1]];
+    })
+);
+const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+if (manifest.schemaVersion !== 2) fail(`manifest schemaVersion must be 2, got ${manifest.schemaVersion}.`);
+
+const sources = {};
+for (const file of resourceFiles) {
+  const filePath = path.join(dataDir, file);
+  const source = fs.readFileSync(filePath, "utf8");
+  const actualHash = sha256(source);
+  const expectedHash = checksumEntries.get(file);
+  const manifestEntry = manifest.resources?.[file];
+  if (!expectedHash) fail(`checksum is missing for ${file}.`);
+  if (actualHash !== expectedHash) fail(`${file} SHA-256 mismatch.`);
+  if (manifestEntry?.sha256 !== actualHash) fail(`${file} manifest SHA-256 mismatch.`);
+  if (manifestEntry?.bytes !== Buffer.byteLength(source, "utf8")) fail(`${file} manifest byte size mismatch.`);
+  sources[file] = source;
 }
+if (checksumEntries.size !== resourceFiles.length) fail("checksum file contains unexpected resources.");
 
 const context = { window: {} };
-vm.runInNewContext(source, context, { filename: dataPath, timeout: 5_000 });
+for (const file of coreFiles) {
+  vm.runInNewContext(sources[file], context, {
+    filename: path.join(dataDir, file),
+    timeout: 5_000
+  });
+}
 const data = context.window.AMUR_ATLAS_DATA;
-if (!data || typeof data !== "object") fail("window.AMUR_ATLAS_DATA was not created.");
+const loader = context.window.AmurAtlasDataLoader;
+if (!data || typeof data !== "object") fail("window.AMUR_ATLAS_DATA was not assembled.");
+if (!loader || typeof loader.applySpatial !== "function") fail("lazy spatial loader was not created.");
+if (loader.isSpatialReady()) fail("spatial data must not be present in the initial core package.");
+if (data.mapBounds3857 !== null) fail("mapBounds3857 must be deferred in the core package.");
+if (data.municipalities.some((item) => item.geometry !== null)) fail("municipality geometry leaked into the core package.");
+if (data.settlements.some((item) => [item.lat, item.lon, item.x3857, item.y3857].some((value) => value !== null))) {
+  fail("settlement coordinates leaked into the core package.");
+}
+
+vm.runInNewContext(sources["atlas-spatial.js"], context, {
+  filename: path.join(dataDir, "atlas-spatial.js"),
+  timeout: 5_000
+});
+loader.applySpatial(context.window.AMUR_ATLAS_SPATIAL);
+if (!loader.isSpatialReady()) fail("spatial package was not applied.");
+if (!Array.isArray(data.mapBounds3857) || data.mapBounds3857.length !== 4) fail("map bounds were not restored.");
+if (data.municipalities.some((item) => !item.geometry)) fail("municipality geometry was not fully restored.");
+if (data.settlements.some((item) => ![item.lat, item.lon, item.x3857, item.y3857].every(Number.isFinite))) {
+  fail("settlement coordinates were not fully restored.");
+}
+
+const canonicalHash = sha256(JSON.stringify(data));
+if (canonicalHash !== manifest.canonicalDataSha256) {
+  fail(`canonical data hash mismatch (expected ${manifest.canonicalDataSha256}, got ${canonicalHash}).`);
+}
 
 const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
 const contract = schema["x-atlas-contract"];
+const deliveryContract = schema["x-delivery-contract"];
+if (deliveryContract?.schemaVersion !== manifest.schemaVersion) {
+  fail("schema and manifest delivery versions do not match.");
+}
+if (JSON.stringify(deliveryContract?.eagerResources) !== JSON.stringify(coreFiles)) {
+  fail("schema eager resource order does not match the runtime order.");
+}
+if (JSON.stringify(deliveryContract?.lazyResources) !== JSON.stringify(["atlas-spatial.js"])) {
+  fail("schema lazy resource list is invalid.");
+}
 for (const key of schema.required) {
   if (!(key in data)) fail(`required root field is missing: ${key}.`);
 }
@@ -41,6 +107,7 @@ for (const [key, expected] of Object.entries(expectedCounts)) {
   if (!Array.isArray(value) || value.length !== expected) {
     fail(`${key} count must be ${expected}, got ${value?.length ?? "missing"}.`);
   }
+  if (manifest.counts?.[key] !== expected) fail(`manifest count for ${key} must be ${expected}.`);
 }
 
 const years = new Set(contract.years);
@@ -110,19 +177,30 @@ for (const [key, actual] of Object.entries(qualityPairs)) {
 }
 
 const html = fs.readFileSync(htmlPath, "utf8");
-const versionMatch = html.match(/<script\s+src=["']data\/atlas-data\.js\?v=([a-f0-9]{12})["']><\/script>/);
-if (!versionMatch) {
-  fail("index.html does not load the versioned external atlas dataset.");
+let previousIndex = -1;
+for (const file of coreFiles) {
+  const versionMatch = html.match(new RegExp(`<script\\s+src=["']data/${file.replace(".", "\\.")}\\?v=([a-f0-9]{12})["']><\\/script>`));
+  if (!versionMatch) fail(`index.html does not load versioned ${file}.`);
+  if (versionMatch[1] !== manifest.resources[file].sha256.slice(0, 12)) {
+    fail(`index.html uses a stale version for ${file}.`);
+  }
+  const index = html.indexOf(versionMatch[0]);
+  if (index <= previousIndex) fail("core atlas resources are loaded in the wrong order.");
+  previousIndex = index;
 }
-if (versionMatch[1] !== actualChecksum.slice(0, 12)) {
-  fail(`index.html uses stale data version ${versionMatch[1]}; expected ${actualChecksum.slice(0, 12)}.`);
+if (/data\/atlas-spatial\.js/.test(html)) fail("atlas-spatial.js must remain lazy and must not be linked statically.");
+if (!sources["atlas-data.js"].includes(`atlas-spatial.js?v=${manifest.resources["atlas-spatial.js"].sha256.slice(0, 12)}`)) {
+  fail("atlas-data.js uses a stale spatial package version.");
 }
 if (/const DATA=\{/.test(html)) fail("index.html still contains an embedded DATA object.");
 if (!/const DATA=window\.AMUR_ATLAS_DATA;/.test(html)) fail("index.html does not expose DATA to the legacy runtime.");
 
 console.log(JSON.stringify({
   status: "ok",
-  sha256: actualChecksum,
+  schemaVersion: manifest.schemaVersion,
+  canonicalDataSha256: canonicalHash,
+  coreBytes: coreFiles.reduce((total, file) => total + manifest.resources[file].bytes, 0),
+  lazySpatialBytes: manifest.resources["atlas-spatial.js"].bytes,
   records: data.records.length,
   years: [...years],
   mappedIcd: aggregate.mappedIcd,

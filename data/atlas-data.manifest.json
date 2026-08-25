@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 2,
+  "canonicalDataSha256": "7e1e5ff02bbb5b9553de4ceeb5e0ce5d57ebb5d5299039f062471b6b60fded15",
+  "resources": {
+    "atlas-reference.js": {
+      "sha256": "e1022f47a0b1260e934c37f997c98d68730a5efebcd9d1ba6530c3b7022dae20",
+      "bytes": 284338
+    },
+    "atlas-observations.js": {
+      "sha256": "4fe70192f128571958e3b719a83dfbffe3ac5c35b0f1b20945e4713500b56797",
+      "bytes": 666706
+    },
+    "atlas-spatial.js": {
+      "sha256": "689158da8208dfa594ed8bcfd2d3cbf7227479ef1b2a8c34ff91eb6e48a37c6f",
+      "bytes": 195944
+    },
+    "atlas-data.js": {
+      "sha256": "9eaeeeda6ce2ef3f1817b71a6f44ab93b1a48f8ef009dfa7c6ddbcd6dd241b8b",
+      "bytes": 4065
+    }
+  },
+  "counts": {
+    "records": 30232,
+    "classes": 22,
+    "blocks": 133,
+    "codes": 577,
+    "municipalities": 29,
+    "settlements": 632
+  }
+}
