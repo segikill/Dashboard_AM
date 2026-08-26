@@ -40,6 +40,21 @@ import {
   type RankingTieBreaker,
   type RankingValueSelector
 } from "./ranking";
+import {
+  buildTreemapViewModel,
+  type TreemapReferenceData,
+  type TreemapViewModel,
+  type TreemapViewOptions
+} from "./view-models/treemap";
+import {
+  buildHeatmapViewModel,
+  heatmapCellKey,
+  topHeatmapTerritories,
+  type HeatmapCell,
+  type HeatmapReferenceData,
+  type HeatmapViewModel,
+  type HeatmapViewOptions
+} from "./view-models/heatmap";
 
 export interface AtlasAnalyticsCoreApi {
   readonly version: "1";
@@ -80,6 +95,24 @@ export interface AtlasAnalyticsCoreApi {
     valueOf: RankingValueSelector<T>,
     tieBreaker?: RankingTieBreaker<T>
   ): Array<T & { rank: number }>;
+  buildTreemapModel<T extends AtlasObservation>(
+    currentRecords: readonly T[],
+    comparisonRecords: readonly T[],
+    reference: TreemapReferenceData,
+    options: TreemapViewOptions
+  ): TreemapViewModel<T>;
+  buildHeatmapModel<T extends AtlasObservation>(
+    currentRecords: readonly T[],
+    allRecords: readonly AtlasObservation[],
+    reference: HeatmapReferenceData,
+    options: HeatmapViewOptions
+  ): HeatmapViewModel<T>;
+  heatmapCellKey(unit: TerritoryAggregationOptions["unit"], territoryIndex: number, classIndex: number): string;
+  topHeatmapTerritories<T extends AtlasObservation>(
+    model: HeatmapViewModel<T>,
+    classIndex: number,
+    limit?: number
+  ): HeatmapCell<T>[];
 }
 
 declare global {
@@ -105,7 +138,11 @@ const api: AtlasAnalyticsCoreApi = Object.freeze({
   calculateRate: calculateAnnualizedRate,
   territoryMetric: calculateTerritoryMetric,
   rankValues: rankIndexedValues,
-  rankItems: rankItemsDescending
+  rankItems: rankItemsDescending,
+  buildTreemapModel: buildTreemapViewModel,
+  buildHeatmapModel: buildHeatmapViewModel,
+  heatmapCellKey,
+  topHeatmapTerritories
 });
 
 window.AmurAtlasAnalyticsCore = api;

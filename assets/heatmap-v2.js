@@ -5,7 +5,6 @@
     typeof state === "undefined"
     || typeof DATA === "undefined"
     || typeof renderHeatmap !== "function"
-    || typeof territoryAggregate !== "function"
   ) return;
 
   let selectedKey = "";
@@ -14,78 +13,37 @@
 
   const numeric = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
   const escapeHtml = (value) => esc(value);
+  const analyticsCore = window.AmurAtlasAnalyticsCore;
+  if (!analyticsCore?.buildHeatmapModel) return;
+  const heatmapReference = Object.freeze({
+    years: DATA.years,
+    codes: DATA.codes,
+    classes: DATA.classes,
+    municipalities: DATA.municipalities,
+    settlements: DATA.settlements
+  });
   const emitHeatmapState = () => queueMicrotask(() => {
     window.dispatchEvent(new CustomEvent("atlas:heatmap-state"));
   });
 
-  const cellKey = (unit, territoryIndex, classIndex) => `${unit}:${territoryIndex}:${classIndex}`;
-  const typeOrder = { city: 0, urban_settlement: 1, district: 2 };
+  const cellKey = analyticsCore.heatmapCellKey;
   const groupNames = {
     city: "Города",
     urban_settlement: "Посёлки городского типа",
     district: "Районы"
   };
 
-  const cellValue = (row, definition, classIndex) => {
-    if (state.heatMetric === "share") return row.total ? row.classes[classIndex] / row.total * 100 : 0;
-    if (rateBase(state.heatMetric)) return rateValue(row.classes[classIndex], definition, state.heatMetric);
-    return row.classes[classIndex];
-  };
-
-  const buildModel = () => {
-    const { defs, table } = territoryAggregate(state.heatUnit);
-    const isMunicipality = state.heatUnit === "mo";
-    const emptyRow = (idx) => ({ idx, total: 0, classes: new Array(DATA.classes.length).fill(0), rows: [] });
-    const rowMetric = (row) => rateBase(state.heatMetric)
-      ? (rateValue(row.total, defs[row.idx], state.heatMetric) ?? -1)
-      : row.total;
-    const stableCompare = (left, right) => {
-      const leftDefinition = defs[left.idx];
-      const rightDefinition = defs[right.idx];
-      const typeDelta = (typeOrder[leftDefinition.municipalityType] ?? 2)
-        - (typeOrder[rightDefinition.municipalityType] ?? 2);
-      return typeDelta || leftDefinition.name.localeCompare(rightDefinition.name, "ru-RU");
-    };
-    const rows = isMunicipality
-      ? defs.map((_, idx) => table.get(idx) || emptyRow(idx)).sort(stableCompare)
-      : [...table.values()].sort((left, right) => rowMetric(right) - rowMetric(left));
-    const limit = state.heatLimit === "all" ? rows.length : numeric(state.heatLimit);
-    const shown = isMunicipality ? rows : rows.slice(0, limit);
-    const stableClasses = new Set(DATA.records.filter((row) => row[4] >= 0).map(classOf));
-    const classes = DATA.classes
-      .map((_, index) => index)
-      .filter((index) => isMunicipality ? stableClasses.has(index) : shown.some((row) => row.classes[index]));
-    const cells = [];
-    shown.forEach((row) => {
-      const definition = defs[row.idx];
-      classes.forEach((classIndex) => {
-        const value = cellValue(row, definition, classIndex);
-        cells.push({
-          key: cellKey(state.heatUnit, row.idx, classIndex),
-          row,
-          definition,
-          classIndex,
-          value,
-          count: row.classes[classIndex],
-          population: populationValue(definition),
-          share: row.total ? row.classes[classIndex] / row.total * 100 : 0
-        });
-      });
-    });
-    const finiteValues = cells.map((cell) => cell.value).filter(Number.isFinite);
-    return {
+  const buildModel = () => analyticsCore.buildHeatmapModel(
+    filtered(),
+    DATA.records,
+    heatmapReference,
+    {
       unit: state.heatUnit,
       metric: state.heatMetric,
       limit: state.heatLimit,
-      defs,
-      rows: shown,
-      classes,
-      cells,
-      cellMap: new Map(cells.map((cell) => [cell.key, cell])),
-      maximum: Math.max(1, ...finiteValues),
-      isMunicipality
-    };
-  };
+      selectedYear: state.year
+    }
+  );
 
   const metricText = (cell) => formatTerritoryMetric(state.heatMetric, cell.value);
   const className = (classIndex) => {
@@ -94,18 +52,12 @@
   };
 
   const rankFor = (model, selected) => {
-    const territories = model.cells
-      .filter((cell) => cell.classIndex === selected.classIndex && Number.isFinite(cell.value))
-      .sort((left, right) => right.value - left.value || left.definition.name.localeCompare(right.definition.name, "ru-RU"));
-    const causes = model.cells
-      .filter((cell) => cell.row.idx === selected.row.idx && Number.isFinite(cell.value))
-      .sort((left, right) => right.value - left.value || left.classIndex - right.classIndex);
     return {
-      territoryRank: territories.findIndex((cell) => cell.key === selected.key) + 1,
-      territoryCount: territories.length,
-      causeRank: causes.findIndex((cell) => cell.key === selected.key) + 1,
-      causeCount: causes.length,
-      topTerritories: territories.slice(0, 6)
+      territoryRank: selected.territoryRank,
+      territoryCount: selected.territoryCount,
+      causeRank: selected.causeRank,
+      causeCount: selected.causeCount,
+      topTerritories: analyticsCore.topHeatmapTerritories(model, selected.classIndex, 6)
     };
   };
 
@@ -224,7 +176,7 @@
 
     let previousGroup = "";
     model.rows.forEach((row) => {
-      const definition = model.defs[row.idx];
+      const definition = model.definitions[row.idx];
       const territoryType = definition.municipalityType || "district";
       if (model.isMunicipality && territoryType !== previousGroup) {
         const group = document.createElement("div");

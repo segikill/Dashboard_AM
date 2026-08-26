@@ -69,6 +69,30 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
         { year: "all", availableYears: window.AMUR_ATLAS_DATA.years }
       );
       const rankedValues = core?.rankValues([0.2, 0.5, 0.3]) || [];
+      const treemapModel = core?.buildTreemapModel(
+        window.AMUR_ATLAS_DATA.records,
+        window.AMUR_ATLAS_DATA.records,
+        {
+          years: window.AMUR_ATLAS_DATA.years,
+          populationTotal: window.AMUR_ATLAS_DATA.populationTotal,
+          classes: window.AMUR_ATLAS_DATA.classes,
+          blocks: window.AMUR_ATLAS_DATA.blocks,
+          codes: window.AMUR_ATLAS_DATA.codes
+        },
+        { scope: "root", parentIndex: -1, metric: "n", sort: "value", minShare: 0, selectedYear: "all" }
+      );
+      const heatmapModel = core?.buildHeatmapModel(
+        window.AMUR_ATLAS_DATA.records,
+        window.AMUR_ATLAS_DATA.records,
+        {
+          years: window.AMUR_ATLAS_DATA.years,
+          codes: window.AMUR_ATLAS_DATA.codes,
+          classes: window.AMUR_ATLAS_DATA.classes,
+          municipalities: window.AMUR_ATLAS_DATA.municipalities,
+          settlements: window.AMUR_ATLAS_DATA.settlements
+        },
+        { unit: "mo", metric: "n", limit: "25", selectedYear: "all" }
+      );
       return {
         version: core?.version || null,
         records: all?.n ?? null,
@@ -89,7 +113,15 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
         ratePer1k: blagoveshchenskRate ? Number(blagoveshchenskRate.value.toFixed(12)) : null,
         rateYearsLabel: core?.rateYearsLabel(blagoveshchenskRate?.periodYears ?? 0) ?? null,
         rankOrder: rankedValues.map((item) => item.i).join(","),
-        ordinalRanks: rankedValues.map((item) => item.rank).join(",")
+        ordinalRanks: rankedValues.map((item) => item.rank).join(","),
+        treemapItems: treemapModel?.rawItems.length ?? null,
+        treemapLeadingClass: treemapModel?.rawItems[0]?.classIndex ?? null,
+        treemapLeadingDeaths: treemapModel?.rawItems[0]?.n ?? null,
+        treemapLeadingSeries: treemapModel?.rawItems[0]?.series.join(",") ?? null,
+        heatmapRows: heatmapModel?.rows.length ?? null,
+        heatmapColumns: heatmapModel?.classes.length ?? null,
+        heatmapCells: heatmapModel?.cells.length ?? null,
+        heatmapDeaths: heatmapModel?.cells.reduce((sum, cell) => sum + cell.count, 0) ?? null
       };
     })(),
     summary: window.AtlasLegacyBridge.getDataSummary(),
@@ -130,6 +162,14 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
     || initial.analyticsCore.rateYearsLabel !== "3 года"
     || initial.analyticsCore.rankOrder !== "1,2,0"
     || initial.analyticsCore.ordinalRanks !== "1,2,3"
+    || initial.analyticsCore.treemapItems !== 20
+    || initial.analyticsCore.treemapLeadingClass !== 8
+    || initial.analyticsCore.treemapLeadingDeaths !== 13795
+    || initial.analyticsCore.treemapLeadingSeries !== "4798,4527,4470"
+    || initial.analyticsCore.heatmapRows !== 29
+    || initial.analyticsCore.heatmapColumns !== 20
+    || initial.analyticsCore.heatmapCells !== 580
+    || initial.analyticsCore.heatmapDeaths !== 30045
   ) {
     errors.push(`analytics core regression: ${JSON.stringify(initial.analyticsCore)}`);
   } else {

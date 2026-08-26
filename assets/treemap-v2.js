@@ -35,15 +35,19 @@
 
   const escapeHtml = (value) => esc(value);
   const numeric = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
-  const currentScopeKey = () => `${state.treeType}:${state.treeIndex}`;
+  const analyticsCore = window.AmurAtlasAnalyticsCore;
+  if (!analyticsCore?.buildTreemapModel) return;
+  const treemapReference = Object.freeze({
+    years: DATA.years,
+    populationTotal: DATA.populationTotal,
+    classes: DATA.classes,
+    blocks: DATA.blocks,
+    codes: DATA.codes
+  });
   const resetTileClick = () => {
     lastTileClickKey = "";
     lastTileClickAt = 0;
   };
-  const periodYearCount = () => state.year === "all" ? Math.max(1, DATA.years.length) : 1;
-  const annualRate = (count) => DATA.populationTotal > 0
-    ? count / DATA.populationTotal / periodYearCount() * 100000
-    : null;
 
   const mix = (first, second, amount) => {
     const parse = (color) => {
@@ -57,170 +61,19 @@
     return `rgb(${left.map((channel, index) => Math.round(channel * (1 - ratio) + right[index] * ratio)).join(",")})`;
   };
 
-  const definitionsFor = (scopeType, parentIndex) => {
-    if (scopeType === "root") {
-      return DATA.classes.map((definition, index) => ({
-        i: index,
-        key: `root:${index}`,
-        scopeType,
-        entityType: "class",
-        code: definition.roman,
-        label: definition.short,
-        color: definition.color,
-        classIndex: index,
-        blockIndex: -1,
-        nextScope: "class"
-      }));
+  const buildScopeModel = (scope, parentIndex, minShare = 0) => analyticsCore.buildTreemapModel(
+    filtered(),
+    filtered({ ignoreYear: true }),
+    treemapReference,
+    {
+      scope,
+      parentIndex,
+      metric: state.treeMetric,
+      sort: state.treeSort,
+      minShare,
+      selectedYear: state.year
     }
-    if (scopeType === "class") {
-      return DATA.blocks
-        .map((definition, index) => ({ definition, index }))
-        .filter(({ definition }) => definition.class === parentIndex)
-        .map(({ definition, index }) => ({
-          i: index,
-          key: `class:${index}`,
-          scopeType,
-          entityType: "block",
-          code: definition.code,
-          label: definition.label,
-          color: DATA.classes[definition.class]?.color || "#607d9d",
-          classIndex: definition.class,
-          blockIndex: index,
-          nextScope: "block"
-        }));
-    }
-    return DATA.codes
-      .map((definition, index) => ({ definition, index }))
-      .filter(({ definition }) => definition.block === parentIndex)
-      .map(({ definition, index }) => ({
-        i: index,
-        key: `block:${index}`,
-        scopeType,
-        entityType: "code",
-        code: definition.code,
-        label: definition.label,
-        color: DATA.classes[definition.class]?.color || "#607d9d",
-        classIndex: definition.class,
-        blockIndex: definition.block,
-        nextScope: null
-      }));
-  };
-
-  const indexForRow = (row, scopeType) => scopeType === "root"
-    ? classOf(row)
-    : scopeType === "class" ? blockOf(row) : row[3];
-
-  const metricValue = (summary, totalRows) => {
-    if (state.treeMetric === "share") return summary.n / Math.max(totalRows, 1) * 100;
-    if (state.treeMetric === "pgpzh") return summary.pgpzh;
-    if (state.treeMetric === "rate") return annualRate(summary.n) || 0;
-    return summary.n;
-  };
-
-  const changeValue = (entry) => {
-    const available = DATA.years;
-    let firstYear = available[0];
-    let secondYear = available[available.length - 1];
-    if (state.year !== "all") {
-      secondYear = +state.year;
-      firstYear = Math.max(available[0], secondYear - 1);
-      if (firstYear === secondYear) return null;
-    }
-    const usePgpzh = state.treeMetric === "pgpzh";
-    const first = usePgpzh ? entry.yearPgpzh.get(firstYear) || 0 : entry.yearCounts.get(firstYear) || 0;
-    const second = usePgpzh ? entry.yearPgpzh.get(secondYear) || 0 : entry.yearCounts.get(secondYear) || 0;
-    return first > 0 ? (second - first) / first * 100 : null;
-  };
-
-  const aggregateItems = (scopeType, parentIndex) => {
-    const definitions = definitionsFor(scopeType, parentIndex);
-    const currentRows = filtered();
-    const allPeriodRows = filtered({ ignoreYear: true });
-    const map = new Map(definitions.map((definition) => [definition.i, {
-      ...definition,
-      rows: [],
-      yearCounts: new Map(DATA.years.map((year) => [year, 0])),
-      yearPgpzh: new Map(DATA.years.map((year) => [year, 0]))
-    }]));
-
-    currentRows.forEach((row) => {
-      const entry = map.get(indexForRow(row, scopeType));
-      if (entry) entry.rows.push(row);
-    });
-    allPeriodRows.forEach((row) => {
-      const entry = map.get(indexForRow(row, scopeType));
-      if (!entry || !entry.yearCounts.has(row[0])) return;
-      entry.yearCounts.set(row[0], entry.yearCounts.get(row[0]) + 1);
-      if (row[2] >= 0) entry.yearPgpzh.set(row[0], entry.yearPgpzh.get(row[0]) + Math.max(75 - row[2], 0));
-    });
-
-    const items = [...map.values()]
-      .filter((entry) => entry.rows.length)
-      .map((entry) => {
-        const summary = stats(entry.rows);
-        const value = metricValue(summary, currentRows.length);
-        return {
-          ...entry,
-          ...summary,
-          value,
-          rate: annualRate(summary.n),
-          share: summary.n / Math.max(currentRows.length, 1) * 100,
-          change: changeValue(entry),
-          series: DATA.years.map((year) => entry.yearCounts.get(year) || 0),
-          match: (row) => indexForRow(row, scopeType) === entry.i
-        };
-      })
-      .filter((entry) => entry.value > 0);
-
-    return { items, currentRows };
-  };
-
-  const aggregateOther = (items, scopeType) => {
-    const rows = items.flatMap((item) => item.rows);
-    const summary = stats(rows);
-    const yearCounts = new Map(DATA.years.map((year) => [
-      year,
-      items.reduce((sum, item) => sum + (item.yearCounts.get(year) || 0), 0)
-    ]));
-    const yearPgpzh = new Map(DATA.years.map((year) => [
-      year,
-      items.reduce((sum, item) => sum + (item.yearPgpzh.get(year) || 0), 0)
-    ]));
-    const synthetic = {
-      i: -1,
-      key: `other:${scopeType}:${state.treeIndex}`,
-      scopeType,
-      entityType: "other",
-      code: "Прочие",
-      label: `${items.length} малых категорий`,
-      color: "#718096",
-      classIndex: -1,
-      blockIndex: -1,
-      nextScope: null,
-      synthetic: true,
-      children: items,
-      rows,
-      yearCounts,
-      yearPgpzh,
-      ...summary,
-      value: items.reduce((sum, item) => sum + item.value, 0),
-      rate: annualRate(summary.n),
-      share: items.reduce((sum, item) => sum + item.share, 0),
-      series: DATA.years.map((year) => yearCounts.get(year) || 0)
-    };
-    synthetic.change = changeValue(synthetic);
-    return synthetic;
-  };
-
-  const sortItems = (items) => [...items].sort((left, right) => {
-    if (state.treeSort === "name") {
-      return `${left.code} ${left.label}`.localeCompare(`${right.code} ${right.label}`, "ru");
-    }
-    if (state.treeSort === "change") {
-      return (right.change ?? -Infinity) - (left.change ?? -Infinity);
-    }
-    return right.value - left.value;
-  });
+  );
 
   const modelCacheKey = () => [
     state.year,
@@ -236,26 +89,7 @@
   const buildModel = (force = false) => {
     const cacheKey = modelCacheKey();
     if (!force && lastModel && cacheKey === lastModelKey) return lastModel;
-    const aggregate = aggregateItems(state.treeType, state.treeIndex);
-    const rawItems = sortItems(aggregate.items);
-    const totalValue = rawItems.reduce((sum, item) => sum + item.value, 0);
-    const threshold = Math.max(0, numeric(state.treeMinShare));
-    const small = threshold > 0
-      ? rawItems.filter((item) => item.value / Math.max(totalValue, 1) * 100 < threshold)
-      : [];
-    const large = small.length >= 2 ? rawItems.filter((item) => !small.includes(item)) : rawItems;
-    const items = small.length >= 2
-      ? sortItems([...large, aggregateOther(small, state.treeType)])
-      : rawItems;
-    lastModel = {
-      key: cacheKey,
-      scopeKey: currentScopeKey(),
-      rawItems,
-      items,
-      currentRows: aggregate.currentRows,
-      totalValue: items.reduce((sum, item) => sum + item.value, 0),
-      totalRows: aggregate.currentRows.length
-    };
+    lastModel = buildScopeModel(state.treeType, state.treeIndex, numeric(state.treeMinShare));
     lastModelKey = cacheKey;
     return lastModel;
   };
@@ -279,16 +113,7 @@
     return mix(item.color, "#172d47", .7 - intensity * .58);
   };
 
-  const hierarchyContext = () => {
-    if (state.treeType === "root") return "Все классы МКБ-10";
-    if (state.treeType === "class") {
-      const definition = DATA.classes[state.treeIndex];
-      return `${definition?.roman || ""}. ${definition?.short || ""}`;
-    }
-    const block = DATA.blocks[state.treeIndex];
-    const cls = DATA.classes[block?.class];
-    return `${cls?.roman || ""} → ${block?.code || ""}`;
-  };
+  const hierarchyContext = () => buildModel().contextLabel;
 
   const classIndexFromContext = (model = buildModel()) => {
     if (state.treeType === "class") return state.treeIndex;
@@ -303,7 +128,7 @@
     if (state.treeType === "class" && selected?.entityType === "block") return selected.blockIndex;
     const classIndex = classIndexFromContext(model);
     if (classIndex < 0) return -1;
-    return aggregateItems("class", classIndex).items.sort((a, b) => b.n - a.n)[0]?.blockIndex ?? -1;
+    return [...buildScopeModel("class", classIndex).rawItems].sort((a, b) => b.n - a.n)[0]?.blockIndex ?? -1;
   };
 
   const goToLevel = (target) => {
@@ -415,25 +240,11 @@
     };
   };
 
-  const pathParts = () => {
-    const parts = [{ type: "root", label: "Все классы", current: state.treeType === "root" }];
-    if (state.treeType !== "root") {
-      const classIndex = state.treeType === "class"
-        ? state.treeIndex
-        : DATA.blocks[state.treeIndex]?.class;
-      const cls = DATA.classes[classIndex];
-      parts.push({
-        type: "class",
-        label: `${cls?.roman || ""} · ${cls?.short || ""}`,
-        current: state.treeType === "class"
-      });
-    }
-    if (state.treeType === "block") {
-      const block = DATA.blocks[state.treeIndex];
-      parts.push({ type: "block", label: `${block?.code || ""} · ${block?.label || ""}`, current: true });
-    }
-    return parts;
-  };
+  const pathParts = () => buildModel().breadcrumbs.map((part) => ({
+    type: part.level,
+    label: part.label,
+    current: part.current
+  }));
 
   const pathHtml = () => pathParts().map((part, index) => `
       ${index ? '<span class="treev2-chevron" aria-hidden="true">›</span>' : ""}
@@ -493,8 +304,8 @@
 
   const childItemsFor = (item, model) => {
     if (item.synthetic) return item.children || [];
-    if (item.entityType === "class") return sortItems(aggregateItems("class", item.classIndex).items);
-    if (item.entityType === "block") return sortItems(aggregateItems("block", item.blockIndex).items);
+    if (item.entityType === "class") return buildScopeModel("class", item.classIndex).rawItems;
+    if (item.entityType === "block") return buildScopeModel("block", item.blockIndex).rawItems;
     return model.rawItems.filter((candidate) => candidate.key !== item.key);
   };
 
