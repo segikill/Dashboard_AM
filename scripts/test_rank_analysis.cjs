@@ -70,7 +70,7 @@ let browser;
     throw new Error(`Inspector selection failed: ${JSON.stringify(selected)}`);
   }
 
-  await page.click('[data-rank-view="trend"]');
+  await page.click('[data-react-rank-option="view"][data-value="trend"]');
   await page.waitForSelector('.rank-analysis__summary strong:text("Траектории 2023–2025")');
   const trend = await page.evaluate(() => ({
     view: state.rankView,
@@ -90,7 +90,7 @@ let browser;
   }
   await page.screenshot({ path: path.join(artifacts, "rank-analysis-trend-1600x900.png"), fullPage: false });
 
-  await page.check("#rankOnlyChanges");
+  await page.check('input[data-react-rank-option="onlyChanges"]');
   const changedOnly = await page.evaluate(() => ({
     enabled: state.rankOnlyChanges,
     trajectories: document.querySelectorAll(".rank-trajectory").length
@@ -98,12 +98,12 @@ let browser;
   if (changedOnly.enabled !== "1" || changedOnly.trajectories >= trend.trajectories) {
     throw new Error(`Changed-only filter failed: ${JSON.stringify(changedOnly)}`);
   }
-  await page.uncheck("#rankOnlyChanges");
+  await page.uncheck('input[data-react-rank-option="onlyChanges"]');
 
-  await page.selectOption("#rankLevel", "block");
-  await page.waitForSelector("#rankClass");
-  await page.selectOption("#rankClass", "1");
-  await page.selectOption("#rankMetric", "pgpzh");
+  await page.selectOption('select[data-react-rank-option="level"]', "block");
+  await page.waitForSelector('select[data-react-rank-option="classIndex"]');
+  await page.selectOption('select[data-react-rank-option="classIndex"]', "1");
+  await page.selectOption('select[data-react-rank-option="metric"]', "pgpzh");
   const detailed = await page.evaluate(() => ({
     level: state.rankLevel,
     classKey: state.rankClass,
@@ -115,8 +115,8 @@ let browser;
     throw new Error(`Detail controls failed: ${JSON.stringify(detailed)}`);
   }
 
-  await page.click('[data-rank-view="compare"]');
-  await page.selectOption("#rankCompare", "sex");
+  await page.click('[data-react-rank-option="view"][data-value="compare"]');
+  await page.click('[data-react-rank-option="compare"][data-value="sex"]');
   const sex = await page.evaluate(() => ({
     compare: state.rankCompare,
     summary: document.querySelector(".rank-analysis__summary strong")?.textContent,
@@ -126,9 +126,9 @@ let browser;
     throw new Error(`Sex comparison failed: ${JSON.stringify(sex)}`);
   }
 
-  await page.selectOption("#rankLevel", "class");
-  await page.selectOption("#rankMetric", "n");
-  await page.selectOption("#rankCompare", "time");
+  await page.selectOption('select[data-react-rank-option="level"]', "class");
+  await page.selectOption('select[data-react-rank-option="metric"]', "n");
+  await page.click('[data-react-rank-option="compare"][data-value="time"]');
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     await page.waitForTimeout(250);

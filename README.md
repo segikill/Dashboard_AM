@@ -60,6 +60,13 @@ npm run dev
 npm run test:hybrid
 ```
 
+Для целевой проверки двух сложных аналитических вкладок доступны отдельные сценарии:
+
+```powershell
+npm run test:rank
+npm run test:pyramid
+```
+
 ## Публикация
 
 Workflow `.github/workflows/pages.yml` автоматически выполняется после push в `main`: устанавливает зависимости через `npm ci`, проверяет данные и TypeScript, собирает `dist`, повторяет упаковку для контроля воспроизводимости, запускает Chrome smoke-тесты и только затем публикует GitHub Pages.

@@ -64,7 +64,7 @@ let browser;
     throw new Error(`Inspector interaction failed: ${JSON.stringify(selection)}`);
   }
 
-  await page.click('[data-pyramid-view="trend"]');
+  await page.click('[data-react-pyramid-option="view"][data-value="trend"]');
   await page.waitForSelector(".pyramid-analysis--trend .pyramid-bar--baseline");
   const trend = await page.evaluate(() => ({
     mode: state.pyramidView,
@@ -80,7 +80,7 @@ let browser;
   if (!trend.note.includes("2023") || !trend.note.includes("2025")) throw new Error(`Trend explanation missing: ${trend.note}`);
   await page.screenshot({ path: path.join(artifacts, "pyramid-analysis-trend-1600x900.png"), fullPage: false });
 
-  await page.click('[data-pyramid-view="gap"]');
+  await page.click('[data-react-pyramid-option="view"][data-value="gap"]');
   await page.waitForSelector(".pyramid-analysis--gap .pyramid-ratio-pill");
   const gap = await page.evaluate(() => ({
     mode: state.pyramidView,
@@ -90,16 +90,16 @@ let browser;
   if (gap.mode !== "gap" || gap.ratios !== 18 || gap.yearDisabled) throw new Error(`Gap mode failed: ${JSON.stringify(gap)}`);
   await page.screenshot({ path: path.join(artifacts, "pyramid-analysis-gap-1600x900.png"), fullPage: false });
 
-  await page.selectOption("#pyramidAgeStep", "10");
+  await page.selectOption('select[data-react-pyramid-option="ageStep"]', "10");
   const ageStep = await page.evaluate(() => ({ step: state.pyramidAgeStep, rows: document.querySelectorAll(".pyramid-age-row").length }));
   if (ageStep.step !== "10" || ageStep.rows !== 9) throw new Error(`Age-step switch failed: ${JSON.stringify(ageStep)}`);
 
-  await page.selectOption("#pyramidLevel", "block");
-  await page.selectOption("#pyramidParentClass", "1");
-  const firstBlock = await page.locator("#pyramidCause option").nth(1).getAttribute("value");
+  await page.selectOption('select[data-react-pyramid-option="level"]', "block");
+  await page.selectOption('select[data-react-pyramid-option="parentClass"]', "1");
+  const firstBlock = await page.locator('select[data-react-pyramid-option="cause"] option').nth(1).getAttribute("value");
   if (!firstBlock) throw new Error("No block choices found");
-  await page.selectOption("#pyramidCause", firstBlock);
-  await page.selectOption("#pyramidMetric", "pgpzh");
+  await page.selectOption('select[data-react-pyramid-option="cause"]', firstBlock);
+  await page.selectOption('select[data-react-pyramid-option="metric"]', "pgpzh");
   const detailed = await page.evaluate(() => ({
     level: state.pyramidLevel,
     classKey: state.pyramidParentClass,
@@ -111,10 +111,10 @@ let browser;
     throw new Error(`Cause detail failed: ${JSON.stringify(detailed)}`);
   }
 
-  await page.selectOption("#pyramidLevel", "class");
-  await page.selectOption("#pyramidMetric", "n");
-  await page.selectOption("#pyramidAgeStep", "5");
-  await page.click('[data-pyramid-view="structure"]');
+  await page.selectOption('select[data-react-pyramid-option="level"]', "class");
+  await page.selectOption('select[data-react-pyramid-option="metric"]', "n");
+  await page.selectOption('select[data-react-pyramid-option="ageStep"]', "5");
+  await page.click('[data-react-pyramid-option="view"][data-value="structure"]');
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     await page.waitForTimeout(180);
