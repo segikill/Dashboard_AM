@@ -46,176 +46,26 @@
     ? `${number(value, 1)}%`
     : number(value, 0);
 
-  const causeDefinitions = () => {
-    if (state.pyramidLevel === "block") {
-      return DATA.blocks
-        .map((definition, index) => ({ index, code: definition.code, label: definition.label, classIndex: definition.class }))
-        .filter((item) => state.pyramidParentClass === "all" || item.classIndex === +state.pyramidParentClass);
-    }
-    if (state.pyramidLevel === "code") {
-      return DATA.codes
-        .map((definition, index) => ({ index, code: definition.code, label: definition.label, classIndex: definition.class }))
-        .filter((item) => state.pyramidParentClass === "all" || item.classIndex === +state.pyramidParentClass);
-    }
-    return DATA.classes.map((definition, index) => ({
-      index,
-      code: definition.roman,
-      label: definition.short,
-      classIndex: index
-    }));
-  };
-
-  const activeCause = () => causeDefinitions().find((item) => String(item.index) === String(state.pyramidCause)) || null;
-
-  const causeLabel = () => {
-    const selected = activeCause();
-    if (selected) return `${selected.code} · ${selected.label}`;
-    if (state.pyramidLevel !== "class" && state.pyramidParentClass !== "all") {
-      const definition = DATA.classes[+state.pyramidParentClass];
-      return definition ? `Все причины класса ${definition.roman}` : "Все причины";
-    }
-    return "Все причины смерти";
-  };
-
-  const rowCauseIndex = (row) => state.pyramidLevel === "class"
-    ? classOf(row)
-    : state.pyramidLevel === "block" ? blockOf(row) : row[3];
-
-  const matchesCause = (row) => {
-    if (row[3] < 0 && (state.pyramidCause !== "all" || state.pyramidParentClass !== "all")) return false;
-    if (state.pyramidLevel !== "class" && state.pyramidParentClass !== "all" && classOf(row) !== +state.pyramidParentClass) return false;
-    return state.pyramidCause === "all" || rowCauseIndex(row) === +state.pyramidCause;
-  };
-
-  const periodRows = (year = null, applyCause = true) => DATA.records.filter((row) => {
-    if (row[2] < 0 || row[2] > 110) return false;
-    if (year != null && row[0] !== year) return false;
-    if (year == null && state.year !== "all" && row[0] !== +state.year) return false;
-    return !applyCause || matchesCause(row);
+  const pyramidReference = Object.freeze({
+    years: DATA.years,
+    classes: DATA.classes,
+    blocks: DATA.blocks,
+    codes: DATA.codes
   });
 
-  const binDefinitions = () => {
-    const step = +state.pyramidAgeStep;
-    const count = step === 10 ? 9 : 18;
-    return Array.from({ length: count }, (_, index) => {
-      const start = index * step;
-      const last = index === count - 1;
-      return {
-        index,
-        start,
-        end: last ? 110 : start + step - 1,
-        label: last ? `${start}+` : `${start}–${start + step - 1}`
-      };
-    });
-  };
+  const pyramidOptions = () => ({
+    view: state.pyramidView,
+    level: state.pyramidLevel,
+    parentClass: state.pyramidParentClass === "all" ? "all" : +state.pyramidParentClass,
+    cause: state.pyramidCause === "all" ? "all" : +state.pyramidCause,
+    metric: state.pyramidMetric,
+    ageStep: +state.pyramidAgeStep,
+    selectedYear: state.year
+  });
 
-  const aggregate = (rows) => {
-    const bins = binDefinitions().map((definition) => ({
-      ...definition,
-      male: { n: 0, pgpzh: 0, ages: [] },
-      female: { n: 0, pgpzh: 0, ages: [] }
-    }));
-    rows.forEach((row) => {
-      if (row[1] !== 1 && row[1] !== 2) return;
-      const bin = bins.find((item) => row[2] >= item.start && row[2] <= item.end);
-      if (!bin) return;
-      const target = row[1] === 1 ? bin.male : bin.female;
-      target.n += 1;
-      target.pgpzh += Math.max(75 - row[2], 0);
-      target.ages.push(row[2]);
-    });
-    const maleTotal = bins.reduce((sum, item) => sum + item.male.n, 0);
-    const femaleTotal = bins.reduce((sum, item) => sum + item.female.n, 0);
-    bins.forEach((item) => {
-      item.male.share = maleTotal ? item.male.n / maleTotal * 100 : 0;
-      item.female.share = femaleTotal ? item.female.n / femaleTotal * 100 : 0;
-      item.male.value = item.male[state.pyramidMetric] || 0;
-      item.female.value = item.female[state.pyramidMetric] || 0;
-      item.total = item.male.n + item.female.n;
-    });
-    return {
-      bins,
-      maleTotal,
-      femaleTotal,
-      total: maleTotal + femaleTotal,
-      maleMedian: quantile(rows.filter((row) => row[1] === 1).map((row) => row[2]), .5),
-      femaleMedian: quantile(rows.filter((row) => row[1] === 2).map((row) => row[2]), .5)
-    };
-  };
+  const causeDefinitions = () => ANALYTICS_CORE.pyramidCauseDefinitions(pyramidReference, pyramidOptions());
 
-  const leadingClass = (rows) => {
-    const counts = new Array(DATA.classes.length).fill(0);
-    rows.forEach((row) => {
-      const index = classOf(row);
-      if (index >= 0) counts[index] += 1;
-    });
-    const maximum = Math.max(...counts, 0);
-    const index = counts.indexOf(maximum);
-    return index < 0 || !maximum ? null : { index, count: maximum, definition: DATA.classes[index] };
-  };
-
-  const rowPayload = (bin, current, baseline = null) => {
-    const male = bin.male;
-    const female = bin.female;
-    const ratio = female.n ? male.n / female.n : male.n ? null : 0;
-    const currentTotal = male.n + female.n;
-    const baseBin = baseline?.bins.find((item) => item.index === bin.index);
-    const baseTotal = baseBin ? baseBin.total : null;
-    const change = baseTotal > 0 ? (currentTotal - baseTotal) / baseTotal * 100 : null;
-    const ageRows = periodRows(state.pyramidView === "trend" ? lastYear : null, false)
-      .filter((row) => row[2] >= bin.start && row[2] <= bin.end);
-    const lead = leadingClass(ageRows);
-    const maleShare = current.maleTotal ? male.n / current.maleTotal * 100 : 0;
-    const femaleShare = current.femaleTotal ? female.n / current.femaleTotal * 100 : 0;
-    const dominance = male.n === female.n
-      ? "Число мужских и женских наблюдений одинаково."
-      : male.n > female.n
-        ? `Мужских наблюдений в ${number(female.n ? male.n / female.n : male.n, 1)} раза больше женских.`
-        : `Женских наблюдений в ${number(male.n ? female.n / male.n : female.n, 1)} раза больше мужских.`;
-    const trendText = state.pyramidView === "trend"
-      ? change == null ? `Для расчёта изменения между ${firstYear} и ${lastYear} недостаточно исходных наблюдений.`
-        : change > 0 ? `Между ${firstYear} и ${lastYear} число наблюдений выросло на ${number(change, 1)}%.`
-          : change < 0 ? `Между ${firstYear} и ${lastYear} число наблюдений снизилось на ${number(Math.abs(change), 1)}%.`
-            : `Между ${firstYear} и ${lastYear} число наблюдений не изменилось.`
-      : "";
-    return {
-      key: `age:${bin.index}`,
-      ageIndex: bin.index,
-      ageLabel: bin.label,
-      start: bin.start,
-      end: bin.end,
-      total: currentTotal,
-      maleN: male.n,
-      femaleN: female.n,
-      maleShare,
-      femaleShare,
-      ratio,
-      pgpzhMale: male.pgpzh,
-      pgpzhFemale: female.pgpzh,
-      baselineTotal: baseTotal,
-      changePercent: change,
-      leadingClass: lead ? `${lead.definition.roman}. ${lead.definition.short}` : "н/д",
-      title: `Возраст ${bin.label} лет`,
-      subtitle: `${causeLabel()} · ${state.pyramidView === "trend" ? `${firstYear} → ${lastYear}` : state.year === "all" ? `${firstYear}–${lastYear}` : state.year}`,
-      primary: { label: "наблюдений в возрастной группе", value: number(currentTotal) },
-      change: state.pyramidView === "trend" ? { value: signed(change, "%") } : undefined,
-      metrics: [
-        { label: "Мужчины", value: `${number(male.n)} · ${number(maleShare, 1)}%`, className: "is-male" },
-        { label: "Женщины", value: `${number(female.n)} · ${number(femaleShare, 1)}%`, className: "is-female" },
-        { label: "Соотношение М / Ж", value: ratio == null ? "только мужчины" : ratio ? `${number(ratio, 2)} : 1` : "н/д" },
-        { label: "Ведущий класс возраста", value: lead ? `${lead.definition.roman}. ${lead.definition.short}` : "н/д", title: lead ? lead.definition.short : "" }
-      ],
-      details: [
-        { label: "ПГПЖ-75 · мужчины", value: number(male.pgpzh) },
-        { label: "ПГПЖ-75 · женщины", value: number(female.pgpzh) },
-        ...(baseBin ? [
-          { label: `${firstYear} · наблюдений`, value: number(baseTotal) },
-          { label: `${lastYear} · наблюдений`, value: number(currentTotal) }
-        ] : [])
-      ],
-      insight: `${dominance} ${trendText}${lead ? ` Ведущий класс в этом возрасте — ${lead.definition.roman}. ${lead.definition.short}.` : ""}`.trim()
-    };
-  };
+  const causeLabel = () => ANALYTICS_CORE.pyramidCauseLabel(pyramidReference, pyramidOptions());
 
   const emitContext = (payload) => {
     window.dispatchEvent(new CustomEvent("atlas:inspector-context", { detail: payload }));
@@ -415,15 +265,13 @@
     pyramidControls();
   };
 
-  const updatePyramidKpis = (rows) => {
-    const summary = stats(rows);
-    const linked = rows.filter((row) => row[5] >= 0).length;
-    const lead = leadingClass(rows);
-    document.getElementById("kpiN").textContent = number(rows.length);
-    document.getElementById("kpiAge").textContent = summary.median == null ? "н/д" : `${number(summary.median, 0)} лет`;
-    document.getElementById("kpiPgpzh").textContent = number(summary.pgpzh);
-    document.getElementById("kpiGeo").textContent = rows.length ? `${number(linked / rows.length * 100, 1)}%` : "н/д";
-    document.getElementById("kpiLead").textContent = lead ? lead.definition.roman : "н/д";
+  const updatePyramidKpis = (model) => {
+    const { kpis } = model;
+    document.getElementById("kpiN").textContent = number(kpis.total);
+    document.getElementById("kpiAge").textContent = kpis.median == null ? "н/д" : `${number(kpis.median, 0)} лет`;
+    document.getElementById("kpiPgpzh").textContent = number(kpis.pgpzh);
+    document.getElementById("kpiGeo").textContent = kpis.linkedPercent == null ? "н/д" : `${number(kpis.linkedPercent, 1)}%`;
+    document.getElementById("kpiLead").textContent = kpis.leadingClass ? kpis.leadingClass.definition.roman : "н/д";
   };
 
   const shouldLabel = (bin, maximumTotal) => {
@@ -432,8 +280,7 @@
     return bin.total === maximumTotal || bin.total >= maximumTotal * .32;
   };
 
-  const addRowInteraction = (group, bin, current, baseline) => {
-    const payload = rowPayload(bin, current, baseline);
+  const addRowInteraction = (group, bin, current, baseline, payload) => {
     group.dataset.inspectorManaged = "true";
     group.dataset.ageKey = payload.key;
     group.setAttribute("tabindex", "0");
@@ -458,10 +305,11 @@
     return payload;
   };
 
-  const renderChart = (current, baseline = null) => {
+  const renderChart = (model) => {
+    const { current, baseline } = model;
     const root = document.createElement("div");
     root.className = `pyramid-analysis pyramid-analysis--${state.pyramidView}`;
-    const peak = [...current.bins].sort((a, b) => b.total - a.total)[0];
+    const peak = model.peak;
     root.innerHTML = `
       <div class="pyramid-analysis__toolbar">
         <div class="pyramid-analysis__summary"><strong>${esc(causeLabel())}</strong><span>${state.pyramidView === "trend" ? `${firstYear} и ${lastYear}` : state.year === "all" ? `${firstYear}–${lastYear}` : state.year} · ${esc(metricLabel())}</span></div>
@@ -537,7 +385,8 @@
         if (femaleWidth > 0) textNode(group, Math.min(width - margin, center + centerGap + femaleWidth + 7), y + 3.5, metricValue(bin.female.value), "pyramid-value-label", "start");
       }
       graphic.appendChild(group);
-      itemContexts.push(addRowInteraction(group, bin, current, baseline));
+      const payload = model.items.find((item) => item.ageIndex === bin.index);
+      itemContexts.push(addRowInteraction(group, bin, current, baseline, payload));
     });
     canvas.appendChild(graphic);
     activePyramidModel = { current, baseline, items: itemContexts };
@@ -548,11 +397,9 @@
   };
 
   renderPyramid = () => {
-    const currentYear = state.pyramidView === "trend" ? lastYear : null;
-    const currentRows = periodRows(currentYear);
-    const current = aggregate(currentRows);
-    const baseline = state.pyramidView === "trend" ? aggregate(periodRows(firstYear)) : null;
-    updatePyramidKpis(state.pyramidView === "trend" ? [...periodRows(firstYear), ...currentRows] : currentRows);
+    const model = ANALYTICS_CORE.buildPyramidModel(DATA.records, pyramidReference, pyramidOptions());
+    const { current, baseline } = model;
+    updatePyramidKpis(model);
     els.meta.innerHTML = `<span class="chip">${state.pyramidView === "trend" ? `${firstYear} → ${lastYear}` : state.year === "all" ? `${firstYear}–${lastYear}` : state.year}</span><span class="chip">оба пола</span><span class="chip">все возрасты</span><span class="chip">${state.pyramidView === "structure" ? "структура" : state.pyramidView === "trend" ? "динамика" : "различия М / Ж"}</span><span class="chip">${esc(metricLabel())}</span>`;
     if (!current.total && !(baseline?.total)) {
       activePyramidModel = null;
@@ -562,7 +409,7 @@
       emitPyramidState();
       return;
     }
-    els.viz.appendChild(renderChart(current, baseline));
+    els.viz.appendChild(renderChart(model));
     window.dispatchEvent(new CustomEvent("atlas:inspector-context", { detail: null }));
     emitPyramidState();
   };

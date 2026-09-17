@@ -44,90 +44,29 @@
     pgpzh: "ПГПЖ-75"
   })[state.rankMetric] || "значение";
 
-  const metricUnit = () => state.rankMetric === "share" ? "%" : state.rankMetric === "pgpzh" ? " лет" : "";
-
   const formatMetric = (value) => state.rankMetric === "share"
     ? `${number(value, 1)}%`
     : state.rankMetric === "pgpzh"
       ? number(value, 0)
       : number(value, 0);
 
-  const causeDefinitions = () => {
-    if (state.rankLevel === "block") {
-      return DATA.blocks
-        .map((definition, index) => ({
-          key: `block:${index}`,
-          index,
-          classIndex: definition.class,
-          code: definition.code,
-          label: definition.label,
-          color: DATA.classes[definition.class]?.color || "#5c7f9f"
-        }))
-        .filter((item) => state.rankClass === "all" || item.classIndex === +state.rankClass);
-    }
-    if (state.rankLevel === "code") {
-      return DATA.codes
-        .map((definition, index) => ({
-          key: `code:${index}`,
-          index,
-          classIndex: definition.class,
-          code: definition.code,
-          label: definition.label,
-          color: DATA.classes[definition.class]?.color || "#5c7f9f"
-        }))
-        .filter((item) => state.rankClass === "all" || item.classIndex === +state.rankClass);
-    }
-    return DATA.classes.map((definition, index) => ({
-      key: `class:${index}`,
-      index,
-      classIndex: index,
-      code: definition.roman,
-      label: definition.short,
-      color: definition.color
-    }));
-  };
+  const rankReference = Object.freeze({
+    classes: DATA.classes,
+    blocks: DATA.blocks,
+    codes: DATA.codes
+  });
 
-  const rowCauseIndex = (row) => {
-    if (state.rankLevel === "class") return classOf(row);
-    if (state.rankLevel === "block") return blockOf(row);
-    return row[3];
-  };
+  const rankOptions = () => ({
+    level: state.rankLevel,
+    classIndex: state.rankClass === "all" ? "all" : +state.rankClass,
+    metric: state.rankMetric,
+    top: Math.max(5, Number(state.rankTop) || 15),
+    onlyChanges: state.rankOnlyChanges === "1"
+  });
 
-  const aggregate = (rows, definitions) => {
-    const byIndex = new Map(definitions.map((definition) => [definition.index, {
-      ...definition,
-      n: 0,
-      pgpzh: 0,
-      ages: []
-    }]));
-    let denominator = 0;
-    rows.forEach((row) => {
-      const classIndex = classOf(row);
-      if (classIndex < 0 || (state.rankClass !== "all" && state.rankLevel !== "class" && classIndex !== +state.rankClass)) return;
-      const index = rowCauseIndex(row);
-      const item = byIndex.get(index);
-      if (!item) return;
-      denominator += 1;
-      item.n += 1;
-      if (row[2] >= 0) {
-        item.ages.push(row[2]);
-        item.pgpzh += Math.max(75 - row[2], 0);
-      }
-    });
-    const items = [...byIndex.values()].filter((item) => item.n > 0).map((item) => ({
-      ...item,
-      share: denominator ? item.n / denominator * 100 : 0,
-      median: item.ages.length ? quantile(item.ages, .5) : null
-    }));
-    items.forEach((item) => { item.value = item[state.rankMetric]; });
-    return { items, total: denominator };
-  };
+  const buildRankModel = (slices) => ANALYTICS_CORE.buildRankModel(slices, rankReference, rankOptions());
 
-  const ranked = (aggregation) => ANALYTICS_CORE.rankItems(
-    aggregation.items.filter((item) => Number.isFinite(item.value)),
-    (item) => item.value,
-    (left, right) => right.n - left.n || left.index - right.index
-  );
+  const causeDefinitions = () => ANALYTICS_CORE.rankDefinitions(rankReference, rankOptions());
 
   const rowsForYear = (year) => filtered({ years: [year] });
 
@@ -151,71 +90,6 @@
       ? { color: "#4b84bd", className: "is-fall", word: "снизилась" }
       : { color: "#9ca8b7", className: "is-stable", word: "сохранила позицию" };
 
-  const contextFor = (definition, series, labels) => {
-    const first = series[0];
-    const last = series[series.length - 1];
-    const rankDelta = first.rank - last.rank;
-    const valueDelta = last.value - first.value;
-    const relative = first.value > 0 ? valueDelta / first.value * 100 : null;
-    const shareDelta = last.share - first.share;
-    const tone = movementTone(rankDelta);
-    const positionCount = Math.abs(rankDelta);
-    const positionWord = positionCount % 10 === 1 && positionCount % 100 !== 11
-      ? "позицию"
-      : positionCount % 10 >= 2 && positionCount % 10 <= 4 && !(positionCount % 100 >= 12 && positionCount % 100 <= 14)
-        ? "позиции"
-        : "позиций";
-    const rankPhrase = rankDelta === 0
-      ? `Ранг не изменился: ${first.rank}-е место`
-      : `Ранг ${rankDelta > 0 ? "повысился" : "понизился"} на ${positionCount} ${positionWord}: с ${first.rank}-го на ${last.rank}-е место`;
-    const volumePhrase = relative == null
-      ? "Относительное изменение не рассчитывается из-за нулевого исходного значения."
-      : relative > 0
-        ? `Выбранный показатель вырос на ${number(relative, 1)}%.`
-        : relative < 0
-          ? `Выбранный показатель снизился на ${number(Math.abs(relative), 1)}%.`
-          : "Выбранный показатель не изменился.";
-    return {
-      key: definition.key,
-      code: definition.code,
-      label: definition.label,
-      color: definition.color,
-      title: `${definition.code} · ${definition.label}`,
-      subtitle: `${labels[0]} → ${labels[labels.length - 1]} · ${metricLabel()}`,
-      primary: { label: `${labels[labels.length - 1]} · ${metricLabel()}`, value: formatMetric(last.value) },
-      change: { value: signed(relative, "%") },
-      rankDelta,
-      relativeDelta: relative,
-      valueDelta,
-      shareDelta,
-      rankBefore: first.rank,
-      rankAfter: last.rank,
-      valueBefore: first.value,
-      valueAfter: last.value,
-      valueBeforeText: formatMetric(first.value),
-      valueAfterText: formatMetric(last.value),
-      shareBefore: first.share,
-      shareAfter: last.share,
-      medianAge: last.median,
-      pgpzh75: last.pgpzh,
-      metrics: [
-        { label: "Изменение ранга", value: rankDelta === 0 ? "без изменения" : `${rankDelta > 0 ? "↑" : "↓"} ${Math.abs(rankDelta)}`, className: tone.className },
-        { label: `${labels[0]} → ${labels[labels.length - 1]}`, value: `${first.rank} → ${last.rank} место` },
-        { label: "Изменение значения", value: `${signed(valueDelta, metricUnit())}`, className: relative > 0 ? "is-rise" : relative < 0 ? "is-fall" : "" },
-        { label: "Изменение доли", value: `${signed(shareDelta, " п.п.")}` }
-      ],
-      details: [
-        { label: `${labels[0]} · значение`, value: formatMetric(first.value) },
-        { label: `${labels[labels.length - 1]} · значение`, value: formatMetric(last.value) },
-        { label: `${labels[0]} · доля`, value: `${number(first.share, 1)}%` },
-        { label: `${labels[labels.length - 1]} · доля`, value: `${number(last.share, 1)}%` },
-        { label: "Медианный возраст", value: last.median == null ? "н/д" : `${number(last.median, 0)} лет` },
-        { label: "ПГПЖ-75", value: number(last.pgpzh, 0) }
-      ],
-      insight: `${definition.code} · ${definition.label}. ${rankPhrase}. ${volumePhrase}`
-    };
-  };
-
   const emitContext = (payload) => {
     selectedPayload = payload;
     window.dispatchEvent(new CustomEvent("atlas:inspector-context", { detail: payload }));
@@ -238,13 +112,13 @@
     group.classList.toggle("is-active", active);
   };
 
-  const attachTrajectoryInteraction = (root, group, definition, series, labels) => {
+  const attachTrajectoryInteraction = (root, group, definition, series, labels, context) => {
     group.dataset.inspectorManaged = "true";
     group.dataset.rankKey = definition.key;
     group.setAttribute("tabindex", "0");
     group.setAttribute("role", "button");
     group.setAttribute("aria-label", `${definition.code}. ${definition.label}. ${labels[0]}: ${series[0].rank} место. ${labels[labels.length - 1]}: ${series[series.length - 1].rank} место.`);
-    const payload = contextFor(definition, series, labels);
+    const payload = context;
     const select = () => {
       selectedKey = definition.key;
       root.querySelectorAll(".rank-trajectory").forEach((item) => item.classList.toggle("is-selected", item === group));
@@ -275,38 +149,10 @@
     return root;
   };
 
-  const trajectoryKeys = (rankings) => {
-    const top = Math.max(5, Number(state.rankTop) || 15);
-    const keys = new Set(rankings.flatMap((list) => list.slice(0, top).map((item) => item.key)));
-    if (state.rankOnlyChanges === "1") {
-      return [...keys].filter((key) => {
-        const positions = rankings.map((list) => list.find((item) => item.key === key)?.rank ?? Number.MAX_SAFE_INTEGER);
-        return positions.some((position, index) => index && position !== positions[index - 1]);
-      });
-    }
-    return [...keys];
-  };
-
   const compareChart = () => {
-    const definitions = causeDefinitions();
     const slices = comparisonSlices();
-    const aggregations = slices.map((slice) => aggregate(slice.rows, definitions));
-    const rankings = aggregations.map(ranked);
-    const keys = trajectoryKeys(rankings);
-    const maps = rankings.map((list) => new Map(list.map((item) => [item.key, item])));
-    const items = keys.map((key) => definitions.find((definition) => definition.key === key)).filter(Boolean);
-    const rankedItems = items.map((definition) => ({
-      definition,
-      series: maps.map((map, side) => map.get(definition.key) || {
-        ...definition,
-        rank: rankings[side].length + 1,
-        n: 0,
-        share: 0,
-        pgpzh: 0,
-        median: null,
-        value: 0
-      })
-    }));
+    const model = buildRankModel(slices);
+    const rankedItems = model.items;
     if (!rankedItems.length) return null;
     if (!rankedItems.some((item) => item.definition.key === selectedKey)) selectedKey = rankedItems[0].definition.key;
     const leftOrder = [...rankedItems].sort((a, b) => a.series[0].rank - b.series[0].rank);
@@ -337,7 +183,7 @@
     [x1, x2].forEach((x) => graphic.appendChild(svg("line", { x1: x, y1: 43, x2: x, y2: height - 10, class: "rank-guide" })));
     let firstPayload = null;
     const contexts = [];
-    rankedItems.forEach(({ definition, series }) => {
+    rankedItems.forEach(({ definition, series, context }) => {
       const y1 = y(leftPosition.get(definition.key));
       const y2 = y(rightPosition.get(definition.key));
       const delta = series[0].rank - series[1].rank;
@@ -359,7 +205,7 @@
       const deltaText = textNode(group, middleX, middleY + 3.5, delta === 0 ? "—" : `${delta > 0 ? "↑" : "↓"}${Math.abs(delta)}`, "rank-delta-text", "middle");
       deltaText.setAttribute("fill", tone.color);
       graphic.appendChild(group);
-      const payload = attachTrajectoryInteraction(graphic, group, definition, series, slices.map((slice) => slice.label));
+      const payload = attachTrajectoryInteraction(graphic, group, definition, series, model.labels, context);
       contexts.push(payload);
       if (!firstPayload) firstPayload = payload;
     });
@@ -369,25 +215,10 @@
   };
 
   const bumpChart = () => {
-    const definitions = causeDefinitions();
     const years = DATA.years.slice().sort((a, b) => a - b);
-    const aggregations = years.map((year) => aggregate(rowsForYear(year), definitions));
-    const rankings = aggregations.map(ranked);
-    const keys = trajectoryKeys(rankings);
-    const maps = rankings.map((list) => new Map(list.map((item) => [item.key, item])));
-    const items = keys.map((key) => definitions.find((definition) => definition.key === key)).filter(Boolean);
-    const rankedItems = items.map((definition) => ({
-      definition,
-      series: maps.map((map, yearIndex) => map.get(definition.key) || {
-        ...definition,
-        rank: rankings[yearIndex].length + 1,
-        n: 0,
-        share: 0,
-        pgpzh: 0,
-        median: null,
-        value: 0
-      })
-    }));
+    const slices = years.map((year) => ({ key: String(year), label: String(year), note: "", rows: rowsForYear(year) }));
+    const model = buildRankModel(slices);
+    const rankedItems = model.items;
     if (!rankedItems.length) return null;
     if (!rankedItems.some((item) => item.definition.key === selectedKey)) selectedKey = rankedItems[0].definition.key;
     const displayPositions = years.map((_, yearIndex) => new Map(
@@ -418,7 +249,7 @@
     });
     let firstPayload = null;
     const contexts = [];
-    rankedItems.forEach(({ definition, series }) => {
+    rankedItems.forEach(({ definition, series, context }) => {
       const delta = series[0].rank - series[series.length - 1].rank;
       const tone = movementTone(delta);
       const points = series.map((_, index) => [x(index), y(index, definition.key)]);
@@ -436,7 +267,7 @@
       textNode(group, points[points.length - 1][0] + 10, points[points.length - 1][1] - 1, `${definition.code} ${shortLabel(definition.label, width < 1050 ? 23 : 31)}`, "rank-label", "start");
       textNode(group, points[points.length - 1][0] + 10, points[points.length - 1][1] + 10, formatMetric(series[series.length - 1].value), "rank-label-value", "start");
       graphic.appendChild(group);
-      const payload = attachTrajectoryInteraction(graphic, group, definition, series, years.map(String));
+      const payload = attachTrajectoryInteraction(graphic, group, definition, series, model.labels, context);
       contexts.push(payload);
       if (!firstPayload) firstPayload = payload;
     });

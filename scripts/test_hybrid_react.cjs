@@ -93,6 +93,26 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
         },
         { unit: "mo", metric: "n", limit: "25", selectedYear: "all" }
       );
+      const sharedReference = {
+        classes: window.AMUR_ATLAS_DATA.classes,
+        blocks: window.AMUR_ATLAS_DATA.blocks,
+        codes: window.AMUR_ATLAS_DATA.codes
+      };
+      const rankModel = core?.buildRankModel(
+        [2023, 2025].map((year) => ({
+          key: String(year),
+          label: String(year),
+          note: "оба пола",
+          rows: window.AMUR_ATLAS_DATA.records.filter((record) => record[0] === year)
+        })),
+        sharedReference,
+        { level: "class", classIndex: "all", metric: "n", top: 15, onlyChanges: false }
+      );
+      const pyramidModel = core?.buildPyramidModel(
+        window.AMUR_ATLAS_DATA.records,
+        { years: window.AMUR_ATLAS_DATA.years, ...sharedReference },
+        { view: "structure", level: "class", parentClass: "all", cause: "all", metric: "n", ageStep: 5, selectedYear: "all" }
+      );
       return {
         version: core?.version || null,
         records: all?.n ?? null,
@@ -121,7 +141,12 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
         heatmapRows: heatmapModel?.rows.length ?? null,
         heatmapColumns: heatmapModel?.classes.length ?? null,
         heatmapCells: heatmapModel?.cells.length ?? null,
-        heatmapDeaths: heatmapModel?.cells.reduce((sum, cell) => sum + cell.count, 0) ?? null
+        heatmapDeaths: heatmapModel?.cells.reduce((sum, cell) => sum + cell.count, 0) ?? null,
+        rankItems: rankModel?.items.length ?? null,
+        rankLeadingClass: rankModel?.items.find((item) => item.definition.key === "class:8")?.series.map((item) => item.n).join(",") ?? null,
+        pyramidBins: pyramidModel?.current.bins.length ?? null,
+        pyramidDeaths: pyramidModel?.current.total ?? null,
+        pyramidContexts: pyramidModel?.items.length ?? null
       };
     })(),
     summary: window.AtlasLegacyBridge.getDataSummary(),
@@ -170,6 +195,11 @@ const base = process.env.ATLAS_URL || "http://127.0.0.1:8765/";
     || initial.analyticsCore.heatmapColumns !== 20
     || initial.analyticsCore.heatmapCells !== 580
     || initial.analyticsCore.heatmapDeaths !== 30045
+    || initial.analyticsCore.rankItems !== 17
+    || initial.analyticsCore.rankLeadingClass !== "4798,4470"
+    || initial.analyticsCore.pyramidBins !== 18
+    || initial.analyticsCore.pyramidDeaths !== 30227
+    || initial.analyticsCore.pyramidContexts !== 18
   ) {
     errors.push(`analytics core regression: ${JSON.stringify(initial.analyticsCore)}`);
   } else {

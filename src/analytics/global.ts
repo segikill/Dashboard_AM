@@ -55,6 +55,24 @@ import {
   type HeatmapViewModel,
   type HeatmapViewOptions
 } from "./view-models/heatmap";
+import {
+  buildRankViewModel,
+  rankDefinitions,
+  type RankDefinition,
+  type RankReferenceData,
+  type RankSlice,
+  type RankViewModel,
+  type RankViewOptions
+} from "./view-models/rank";
+import {
+  buildPyramidViewModel,
+  pyramidCauseDefinitions,
+  pyramidCauseLabel,
+  type PyramidCauseDefinition,
+  type PyramidReferenceData,
+  type PyramidViewModel,
+  type PyramidViewOptions
+} from "./view-models/pyramid";
 
 export interface AtlasAnalyticsCoreApi {
   readonly version: "1";
@@ -113,6 +131,25 @@ export interface AtlasAnalyticsCoreApi {
     classIndex: number,
     limit?: number
   ): HeatmapCell<T>[];
+  buildRankModel<T extends AtlasObservation>(
+    slices: readonly RankSlice<T>[],
+    reference: RankReferenceData,
+    options: RankViewOptions
+  ): RankViewModel;
+  rankDefinitions(
+    reference: RankReferenceData,
+    options: Pick<RankViewOptions, "level" | "classIndex">
+  ): RankDefinition[];
+  buildPyramidModel<T extends AtlasObservation>(
+    records: readonly T[],
+    reference: PyramidReferenceData,
+    options: PyramidViewOptions
+  ): PyramidViewModel<T>;
+  pyramidCauseDefinitions(
+    reference: PyramidReferenceData,
+    options: Pick<PyramidViewOptions, "level" | "parentClass">
+  ): PyramidCauseDefinition[];
+  pyramidCauseLabel(reference: PyramidReferenceData, options: PyramidViewOptions): string;
 }
 
 declare global {
@@ -142,7 +179,12 @@ const api: AtlasAnalyticsCoreApi = Object.freeze({
   buildTreemapModel: buildTreemapViewModel,
   buildHeatmapModel: buildHeatmapViewModel,
   heatmapCellKey,
-  topHeatmapTerritories
+  topHeatmapTerritories,
+  buildRankModel: buildRankViewModel,
+  rankDefinitions,
+  buildPyramidModel: buildPyramidViewModel,
+  pyramidCauseDefinitions,
+  pyramidCauseLabel
 });
 
 window.AmurAtlasAnalyticsCore = api;
