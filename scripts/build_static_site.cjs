@@ -18,6 +18,7 @@ if (path.dirname(dist) !== root || path.basename(dist) !== "dist") {
 
 const sha256 = (buffer) => crypto.createHash("sha256").update(buffer).digest("hex");
 const toPosix = (value) => value.split(path.sep).join("/");
+const isPublicFile = (file) => !file.split("/").some((segment) => segment.startsWith("."));
 
 const copyDirectory = (source, destination) => {
   fs.mkdirSync(destination, { recursive: true });
@@ -84,7 +85,7 @@ fs.writeFileSync(indexPath, index, "utf8");
 const sourceRevision = process.env.ATLAS_SOURCE_REVISION || process.env.GITHUB_SHA || "local";
 
 const files = listFiles(dist)
-  .filter((file) => file !== "build-manifest.json")
+  .filter((file) => file !== "build-manifest.json" && isPublicFile(file))
   .map((file) => {
     const content = fs.readFileSync(path.join(dist, ...file.split("/")));
     return { path: file, bytes: content.byteLength, sha256: sha256(content) };

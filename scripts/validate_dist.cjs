@@ -25,6 +25,7 @@ const requiredFiles = [
 const fail = (message) => { throw new Error(`Static distribution validation failed: ${message}`); };
 const sha256 = (buffer) => crypto.createHash("sha256").update(buffer).digest("hex");
 const toPosix = (value) => value.split(path.sep).join("/");
+const isPublicFile = (file) => !file.split("/").some((segment) => segment.startsWith("."));
 const listFiles = (directory, base = directory) => fs.readdirSync(directory, { withFileTypes: true })
   .flatMap((entry) => {
     const absolute = path.join(directory, entry.name);
@@ -38,8 +39,9 @@ const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 if (manifest.schemaVersion !== 1) fail(`unsupported manifest schema ${manifest.schemaVersion}.`);
 
 const actualFiles = listFiles(dist).filter((file) => file !== "build-manifest.json");
+const publicFiles = actualFiles.filter(isPublicFile);
 const listedFiles = manifest.files.map((file) => file.path);
-if (JSON.stringify(actualFiles) !== JSON.stringify(listedFiles)) fail("file list differs from build manifest.");
+if (JSON.stringify(publicFiles) !== JSON.stringify(listedFiles)) fail("public file list differs from build manifest.");
 
 for (const file of actualFiles) {
   const top = file.split("/", 1)[0];
@@ -53,7 +55,7 @@ for (const entry of manifest.files) {
   if (content.byteLength !== entry.bytes) fail(`${entry.path} byte size mismatch.`);
   if (sha256(content) !== entry.sha256) fail(`${entry.path} SHA-256 mismatch.`);
 }
-if (manifest.totals.files !== actualFiles.length) fail("manifest file count is invalid.");
+if (manifest.totals.files !== publicFiles.length) fail("manifest file count is invalid.");
 if (manifest.totals.bytes !== manifest.files.reduce((total, file) => total + file.bytes, 0)) {
   fail("manifest total byte size is invalid.");
 }
